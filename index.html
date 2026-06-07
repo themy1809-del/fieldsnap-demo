@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FieldSnap — Demo Web v2</title>
+<title>FieldSnap — Báo cáo hiện trường</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f1f3f4; min-height: 100vh;
@@ -20,19 +20,42 @@
   .btn-camera { background: #1a73e8; color: #fff; }
   .btn-send { background: #188038; color: #fff; }
   .btn:disabled { background: #ccc; cursor: not-allowed; }
-  #preview { width: 100%; border-radius: 12px; margin-top: 12px; display: none; }
   #status { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; }
   .ok  { background: #e6f4ea; color: #188038; display: block !important; }
   .err { background: #fce8e6; color: #c5221f; display: block !important; }
   .info{ background: #e8f0fe; color: #1a73e8; display: block !important; }
   .warn{ background: #fce8e6; color: #c5221f; padding: 10px; border-radius: 8px; margin-top: 8px; }
   #gps { font-size: 13px; color: #666; margin-top: 8px; }
+
+  /* Dải thumbnail ảnh đã chụp */
+  #thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .thumb { position: relative; width: 72px; height: 72px; border-radius: 10px; overflow: hidden;
+           border: 2px solid #1a73e8; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .del { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
+                border-radius: 50%; border: none; background: rgba(0,0,0,.65); color: #fff;
+                font-size: 13px; line-height: 22px; cursor: pointer; padding: 0; }
+
+  /* Camera toàn màn hình — chụp liên tục */
+  #camOverlay { position: fixed; inset: 0; background: #000; z-index: 50; display: none;
+                flex-direction: column; }
+  #camOverlay.show { display: flex; }
+  #camVideo { flex: 1; width: 100%; object-fit: cover; }
+  #camBar { display: flex; align-items: center; justify-content: space-around; padding: 14px;
+            background: rgba(0,0,0,.85); }
+  #snapBtn { width: 72px; height: 72px; border-radius: 50%; border: 5px solid #fff;
+             background: #1a73e8; color: #fff; font-size: 26px; cursor: pointer; }
+  #doneBtn { background: #188038; color: #fff; border: none; border-radius: 10px;
+             padding: 14px 22px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  #camCount { color: #fff; font-size: 17px; font-weight: 700; min-width: 64px; text-align: center; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
+           transition: opacity .12s; }
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>📷 FieldSnap — Demo v2</h1>
-  <p class="sub">Chụp hình → AI phân tích → lưu Google Sheet</p>
+  <h1>📷 FieldSnap</h1>
+  <p class="sub">Chụp nhiều ảnh liên tục → AI phân tích → lưu Google Sheet</p>
 
   <label>Tên của bạn</label>
   <input type="text" id="user" placeholder="VD: Thế Mỹ">
@@ -42,10 +65,10 @@
     <option value="auto">🤖 Tự động theo GPS</option>
   </select>
 
-  <input type="file" id="camera" accept="image/*" capture="environment" hidden>
-  <button class="btn btn-camera" onclick="document.getElementById('camera').click()">📸 CHỤP HÌNH</button>
+  <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+  <button class="btn btn-camera" onclick="openCamera()">📸 MỞ CAMERA — CHỤP LIÊN TỤC</button>
 
-  <img id="preview" alt="">
+  <div id="thumbs"></div>
   <div id="gps"></div>
 
   <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)</label>
@@ -55,20 +78,33 @@
   <div id="status"></div>
 </div>
 
+<!-- Camera chụp liên tục -->
+<div id="camOverlay">
+  <video id="camVideo" autoplay playsinline muted></video>
+  <div id="flash"></div>
+  <div id="camBar">
+    <span id="camCount">0 ảnh</span>
+    <button id="snapBtn" onclick="snap()">📸</button>
+    <button id="doneBtn" onclick="closeCamera()">Xong ✓</button>
+  </div>
+</div>
+
 <script>
-// ====== SỬA 2 DÒNG NÀY sau khi deploy Apps Script ======
+// ====== CẤU HÌNH ======
 const API_URL = 'https://script.google.com/macros/s/AKfycbw9Ht0t2ooozM7i6-GZbrB_bXmZmIjDAueD4wTu6byOiXojbuF66jLOYgB5obwQJZLh/exec';
 const SECRET_KEY = 'FS-themy-2026-xK7mQ9pL';
-// ========================================================
+const MAX_PHOTOS = 10;
+// ======================
 
-let imageBase64 = null, lat = null, lng = null;
+let photos = [];           // base64 (không kèm tiền tố data:)
+let lat = null, lng = null;
+let camStream = null;
 const $ = id => document.getElementById(id);
 
-// Lưu/khôi phục tên người dùng
 $('user').value = localStorage.getItem('userName') || '';
 $('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
 
-// Tải danh sách dự án từ tab "Dự án" trong Sheet
+// Danh sách dự án từ tab "Dự án"
 fetch(API_URL + '?action=projects')
   .then(r => r.json())
   .then(data => {
@@ -82,25 +118,85 @@ fetch(API_URL + '?action=projects')
   })
   .catch(() => {});
 
-$('camera').addEventListener('change', async e => {
+// ===== CAMERA TRONG TRANG — CHỤP LIÊN TỤC =====
+async function openCamera() {
+  getGps(); // lấy GPS song song ngay khi mở camera
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 } },
+      audio: false
+    });
+    $('camVideo').srcObject = camStream;
+    $('camOverlay').classList.add('show');
+    updateCamCount();
+  } catch (e) {
+    // Không mở được camera (thiếu quyền / trình duyệt cũ) → dùng input thường
+    $('fileInput').click();
+  }
+}
+
+function snap() {
+  if (photos.length >= MAX_PHOTOS) { alert('Tối đa ' + MAX_PHOTOS + ' ảnh/báo cáo'); return; }
+  const video = $('camVideo');
+  const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth * scale;
+  canvas.height = video.videoHeight * scale;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  photos.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+
+  // hiệu ứng nháy + rung nhẹ
+  $('flash').style.opacity = '0.7';
+  setTimeout(() => $('flash').style.opacity = '0', 120);
+  if (navigator.vibrate) navigator.vibrate(40);
+
+  updateCamCount();
+  renderThumbs();
+}
+
+function closeCamera() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  $('camOverlay').classList.remove('show');
+}
+
+function updateCamCount() {
+  $('camCount').textContent = photos.length + ' ảnh';
+  $('sendBtn').disabled = photos.length === 0;
+  $('sendBtn').textContent = photos.length
+    ? '☁️ GỬI BÁO CÁO (' + photos.length + ' ảnh)' : '☁️ GỬI BÁO CÁO';
+}
+
+// Fallback: chụp qua input file (mỗi lần 1 ảnh, vẫn cộng dồn)
+$('fileInput').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
-
-  // Nén ảnh xuống 1280px
   const img = await createImageBitmap(file);
   const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
   canvas.width = img.width * scale;
   canvas.height = img.height * scale;
   canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-  imageBase64 = dataUrl.split(',')[1];
+  photos.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+  e.target.value = '';
+  updateCamCount();
+  renderThumbs();
+});
 
-  $('preview').src = dataUrl;
-  $('preview').style.display = 'block';
-  $('sendBtn').disabled = false;
+function renderThumbs() {
+  $('thumbs').innerHTML = photos.map((b64, i) =>
+    '<div class="thumb"><img src="data:image/jpeg;base64,' + b64 + '">' +
+    '<button class="del" onclick="removePhoto(' + i + ')">✕</button></div>'
+  ).join('');
+}
 
-  // Lấy GPS
+function removePhoto(i) {
+  photos.splice(i, 1);
+  updateCamCount();
+  renderThumbs();
+}
+
+function getGps() {
+  if (lat !== null) return;
   $('gps').textContent = '📍 Đang lấy vị trí...';
   navigator.geolocation.getCurrentPosition(
     pos => {
@@ -110,39 +206,43 @@ $('camera').addEventListener('change', async e => {
     () => $('gps').textContent = '📍 Không lấy được vị trí (vẫn gửi được)',
     { timeout: 10000 }
   );
-});
+}
 
+// ===== GỬI 1 LẦN CHO CẢ CHÙM ẢNH =====
 async function send() {
   const btn = $('sendBtn'), st = $('status');
   btn.disabled = true;
-  st.className = 'info'; st.textContent = '⏳ Đang gửi + AI phân tích (10-30 giây)...';
+  st.className = 'info';
+  st.textContent = '⏳ Đang gửi ' + photos.length + ' ảnh + AI phân tích (15-40 giây)...';
 
   try {
-    // Content-Type text/plain để tránh lỗi CORS với Apps Script
     const res = await fetch(API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'text/plain' }, // né CORS preflight với Apps Script
       body: JSON.stringify({
         key: SECRET_KEY,
-        reportId: crypto.randomUUID(), // idempotency — backend khử trùng lặp
-        imageBase64, lat, lng,
+        reportId: crypto.randomUUID(),
+        images: photos,
+        lat, lng,
         note: $('note').value.trim(),
         user: $('user').value.trim(),
         project: $('project').value,
-        ocrText: '' // bản web demo chưa có OCR; app Flutter có
+        ocrText: '',
+        entities: []
       })
     });
     const data = await res.json();
     if (data.ok) {
       st.className = 'ok';
-      let html = '✅ Đã lưu báo cáo!<br>📁 Dự án: <b>' + (data.project || '?') + '</b>';
+      let html = '✅ Đã lưu báo cáo (' + (data.photoCount || photos.length) + ' ảnh)!' +
+                 '<br>📁 Dự án: <b>' + (data.project || '?') + '</b>';
       if (data.category) html += '<br>🏷️ Hạng mục: <b>' + data.category + '</b>';
       if (data.description) html += '<br>🤖 ' + data.description;
-      if (data.issues) html += '<div class="warn">⚠️ ' + data.issues + '</div>';
-      html += '<br><a href="' + data.imageUrl + '" target="_blank">Xem ảnh trên Drive</a>';
+      if (data.issues) html += '<div class="warn">⚠️ ' + data.issues.replace(/\n/g, '<br>') + '</div>';
+      if (data.imageUrl) html += '<br><a href="' + data.imageUrl + '" target="_blank">Xem ảnh trên Drive</a>';
       st.innerHTML = html;
-      $('note').value = ''; $('preview').style.display = 'none';
-      imageBase64 = null;
+      photos = []; $('note').value = '';
+      renderThumbs(); updateCamCount();
     } else {
       throw new Error(data.error);
     }
