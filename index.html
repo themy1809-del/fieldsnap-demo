@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FieldSnap — Demo Web v2</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f1f3f4; min-height: 100vh;
+         display: flex; justify-content: center; padding: 16px; }
+  .card { background: #fff; border-radius: 16px; padding: 24px; max-width: 440px; width: 100%;
+          box-shadow: 0 2px 12px rgba(0,0,0,.08); height: fit-content; }
+  h1 { font-size: 22px; color: #1a73e8; margin-bottom: 4px; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
+  label { font-size: 13px; font-weight: 600; color: #444; display: block; margin: 14px 0 4px; }
+  input[type=text], textarea, select { width: 100%; padding: 10px; border: 1px solid #ccc;
+          border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; }
+  .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px;
+         font-weight: 600; cursor: pointer; margin-top: 16px; }
+  .btn-camera { background: #1a73e8; color: #fff; }
+  .btn-send { background: #188038; color: #fff; }
+  .btn:disabled { background: #ccc; cursor: not-allowed; }
+  #preview { width: 100%; border-radius: 12px; margin-top: 12px; display: none; }
+  #status { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; }
+  .ok  { background: #e6f4ea; color: #188038; display: block !important; }
+  .err { background: #fce8e6; color: #c5221f; display: block !important; }
+  .info{ background: #e8f0fe; color: #1a73e8; display: block !important; }
+  .warn{ background: #fce8e6; color: #c5221f; padding: 10px; border-radius: 8px; margin-top: 8px; }
+  #gps { font-size: 13px; color: #666; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>📷 FieldSnap — Demo v2</h1>
+  <p class="sub">Chụp hình → AI phân tích → lưu Google Sheet</p>
+
+  <label>Tên của bạn</label>
+  <input type="text" id="user" placeholder="VD: Thế Mỹ">
+
+  <label>Dự án</label>
+  <select id="project">
+    <option value="auto">🤖 Tự động theo GPS</option>
+  </select>
+
+  <input type="file" id="camera" accept="image/*" capture="environment" hidden>
+  <button class="btn btn-camera" onclick="document.getElementById('camera').click()">📸 CHỤP HÌNH</button>
+
+  <img id="preview" alt="">
+  <div id="gps"></div>
+
+  <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)</label>
+  <textarea id="note" rows="2" placeholder="VD: Đã hàn xong dầm trục B"></textarea>
+
+  <button class="btn btn-send" id="sendBtn" onclick="send()" disabled>☁️ GỬI BÁO CÁO</button>
+  <div id="status"></div>
+</div>
+
+<script>
+// ====== SỬA 2 DÒNG NÀY sau khi deploy Apps Script ======
+const API_URL = 'https://script.google.com/macros/s/AKfycbw9Ht0t2ooozM7i6-GZbrB_bXmZmIjDAueD4wTu6byOiXojbuF66jLOYgB5obwQJZLh/exec';
+const SECRET_KEY = 'FS-themy-2026-xK7mQ9pL';
+// ========================================================
+
+let imageBase64 = null, lat = null, lng = null;
+const $ = id => document.getElementById(id);
+
+// Lưu/khôi phục tên người dùng
+$('user').value = localStorage.getItem('userName') || '';
+$('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
+
+// Tải danh sách dự án từ tab "Dự án" trong Sheet
+fetch(API_URL + '?action=projects')
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok && data.projects) {
+      for (const name of data.projects) {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = name;
+        $('project').appendChild(opt);
+      }
+    }
+  })
+  .catch(() => {});
+
+$('camera').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Nén ảnh xuống 1280px
+  const img = await createImageBitmap(file);
+  const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width * scale;
+  canvas.height = img.height * scale;
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+  imageBase64 = dataUrl.split(',')[1];
+
+  $('preview').src = dataUrl;
+  $('preview').style.display = 'block';
+  $('sendBtn').disabled = false;
+
+  // Lấy GPS
+  $('gps').textContent = '📍 Đang lấy vị trí...';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
+      $('gps').textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    },
+    () => $('gps').textContent = '📍 Không lấy được vị trí (vẫn gửi được)',
+    { timeout: 10000 }
+  );
+});
+
+async function send() {
+  const btn = $('sendBtn'), st = $('status');
+  btn.disabled = true;
+  st.className = 'info'; st.textContent = '⏳ Đang gửi + AI phân tích (10-30 giây)...';
+
+  try {
+    // Content-Type text/plain để tránh lỗi CORS với Apps Script
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        key: SECRET_KEY,
+        reportId: crypto.randomUUID(), // idempotency — backend khử trùng lặp
+        imageBase64, lat, lng,
+        note: $('note').value.trim(),
+        user: $('user').value.trim(),
+        project: $('project').value,
+        ocrText: '' // bản web demo chưa có OCR; app Flutter có
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      st.className = 'ok';
+      let html = '✅ Đã lưu báo cáo!<br>📁 Dự án: <b>' + (data.project || '?') + '</b>';
+      if (data.category) html += '<br>🏷️ Hạng mục: <b>' + data.category + '</b>';
+      if (data.description) html += '<br>🤖 ' + data.description;
+      if (data.issues) html += '<div class="warn">⚠️ ' + data.issues + '</div>';
+      html += '<br><a href="' + data.imageUrl + '" target="_blank">Xem ảnh trên Drive</a>';
+      st.innerHTML = html;
+      $('note').value = ''; $('preview').style.display = 'none';
+      imageBase64 = null;
+    } else {
+      throw new Error(data.error);
+    }
+  } catch (err) {
+    st.className = 'err';
+    st.textContent = '❌ Lỗi: ' + err.message;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
