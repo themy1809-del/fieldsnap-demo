@@ -75,7 +75,7 @@
   <label>Tên của bạn</label>
   <input type="text" id="user" placeholder="VD: Thế Mỹ">
 
-  <label>Dự án</label>
+  <label>Dự án <a id="addProj" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer">➕ Thêm dự án</a></label>
   <select id="project">
     <option value="auto">🤖 Tự động theo GPS</option>
   </select>
@@ -141,6 +141,37 @@ fetch(API_URL + '?action=projects')
 
 // lưu mỗi khi đổi dự án
 $('project').addEventListener('change', e => localStorage.setItem('lastProject', e.target.value));
+
+// ➕ Thêm dự án ngay trong app
+$('addProj').addEventListener('click', async () => {
+  const name = (prompt('Tên dự án mới:') || '').trim();
+  if (!name) return;
+  $('addProj').textContent = '⏳ Đang thêm...';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ key: SECRET_KEY, action: 'addProject', name })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    // nạp lại danh sách, chọn dự án vừa thêm
+    const sel = $('project');
+    [...sel.querySelectorAll('option:not([value="auto"])')].forEach(o => o.remove());
+    for (const p of data.projects) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = p;
+      sel.appendChild(opt);
+    }
+    sel.value = name;
+    localStorage.setItem('lastProject', name);
+    alert('✅ Đã thêm dự án: ' + name);
+  } catch (e) {
+    alert('❌ Lỗi: ' + e.message);
+  } finally {
+    $('addProj').textContent = '➕ Thêm dự án';
+  }
+});
 
 // ===== CAMERA TRONG TRANG — CHỤP LIÊN TỤC =====
 async function openCamera() {
