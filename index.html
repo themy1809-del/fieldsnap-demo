@@ -190,6 +190,40 @@ async function openCamera() {
   }
 }
 
+// Đóng dấu Thời gian + Dự án + GPS vào góc dưới ảnh (in chìm vào ảnh)
+function drawStamp(ctx, W, H) {
+  const now = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const time = `${p(now.getDate())}/${p(now.getMonth() + 1)}/${now.getFullYear()} ` +
+               `${p(now.getHours())}:${p(now.getMinutes())}`;
+  const pv = $('project').value;
+  const proj = pv === 'auto' ? 'Tự động theo GPS' : pv;
+  const user = ($('user').value || '').trim();
+
+  const lines = [];
+  lines.push('🕒 ' + time + (user ? '   •   ' + user : ''));
+  lines.push('📁 ' + proj);
+  if (lat !== null) lines.push('📍 ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+
+  const fs = Math.max(15, Math.round(W * 0.030));
+  const lh = Math.round(fs * 1.4);
+  const padX = Math.round(fs * 0.6);
+  const barH = lh * lines.length + Math.round(fs * 0.7);
+
+  // nền mờ
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, H - barH, W, barH);
+  // vạch xanh nhấn mép trái
+  ctx.fillStyle = '#1a73e8';
+  ctx.fillRect(0, H - barH, Math.round(fs * 0.25), barH);
+
+  ctx.textBaseline = 'top';
+  ctx.font = `bold ${fs}px Arial, sans-serif`;
+  ctx.fillStyle = '#ffffff';
+  lines.forEach((ln, i) =>
+    ctx.fillText(ln, padX + Math.round(fs * 0.3), H - barH + Math.round(fs * 0.4) + i * lh));
+}
+
 function snap() {
   if (photos.length >= MAX_PHOTOS) { alert('Tối đa ' + MAX_PHOTOS + ' ảnh/báo cáo'); return; }
   const video = $('camVideo');
@@ -213,7 +247,9 @@ function snap() {
     canvas.width = w; canvas.height = h;
     ctx.drawImage(video, 0, 0, w, h);
   }
-  photos.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);          // reset trước khi đóng dấu
+  drawStamp(ctx, canvas.width, canvas.height); // đóng dấu thời gian + dự án + GPS
+  photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
 
   // hiệu ứng nháy + rung nhẹ
   $('flash').style.opacity = '0.7';
@@ -255,8 +291,10 @@ $('fileInput').addEventListener('change', async e => {
   const canvas = document.createElement('canvas');
   canvas.width = img.width * scale;
   canvas.height = img.height * scale;
-  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-  photos.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+  const fctx = canvas.getContext('2d');
+  fctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  drawStamp(fctx, canvas.width, canvas.height);
+  photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
   e.target.value = '';
   updateCamCount();
   renderThumbs();
