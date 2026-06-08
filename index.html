@@ -75,7 +75,10 @@
   <label>Tên của bạn</label>
   <input type="text" id="user" placeholder="VD: Thế Mỹ">
 
-  <label>Dự án <a id="addProj" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer">➕ Thêm dự án</a></label>
+  <label>Dự án
+    <a id="setFolder" style="float:right;color:#188038;font-weight:600;text-decoration:none;cursor:pointer">📁 Thư mục lưu</a>
+    <a id="addProj" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer;margin-right:14px">➕ Thêm dự án</a>
+  </label>
   <select id="project">
     <option value="auto">🤖 Tự động theo GPS</option>
   </select>
@@ -152,6 +155,31 @@ fetch(API_URL + '?action=projects')
 
 // lưu mỗi khi đổi dự án
 $('project').addEventListener('change', e => localStorage.setItem('lastProject', e.target.value));
+
+// 📁 Đặt thư mục Drive lưu ảnh cho dự án đang chọn
+$('setFolder').addEventListener('click', async () => {
+  const pv = $('project').value;
+  if (pv === 'auto') { alert('Hãy chọn 1 dự án cụ thể trước (không phải "Tự động theo GPS").'); return; }
+  const link = (prompt(
+    'Dán LINK thư mục Google Drive để lưu ảnh dự án "' + pv + '":\n\n' +
+    'Cách lấy: mở thư mục trong Google Drive → copy đường dẫn trên thanh địa chỉ trình duyệt.'
+  ) || '').trim();
+  if (!link) return;
+  $('setFolder').textContent = '⏳ Đang lưu...';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ key: SECRET_KEY, action: 'setProjectFolder', project: pv, folder: link })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    alert('✅ Ảnh dự án "' + pv + '" sẽ lưu vào thư mục:\n📁 ' + data.folderName + ' / <tháng>');
+  } catch (e) {
+    alert('❌ ' + e.message);
+  } finally {
+    $('setFolder').textContent = '📁 Thư mục lưu';
+  }
+});
 
 // ➕ Thêm dự án ngay trong app
 $('addProj').addEventListener('click', async () => {
