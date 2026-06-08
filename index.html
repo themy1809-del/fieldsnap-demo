@@ -193,11 +193,26 @@ async function openCamera() {
 function snap() {
   if (photos.length >= MAX_PHOTOS) { alert('Tối đa ' + MAX_PHOTOS + ' ảnh/báo cáo'); return; }
   const video = $('camVideo');
-  const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const scale = Math.min(1, 1280 / Math.max(vw, vh));
+  const w = Math.round(vw * scale), h = Math.round(vh * scale);
+
+  // Ảnh từ camera trong trang KHÔNG có dữ liệu xoay EXIF → tự xoay cho thẳng đứng
+  // khi cầm điện thoại dọc nhưng cảm biến trả khung hình ngang.
+  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  const needRotate = portrait && w > h;
+
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth * scale;
-  canvas.height = video.videoHeight * scale;
-  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  const ctx = canvas.getContext('2d');
+  if (needRotate) {
+    canvas.width = h; canvas.height = w;       // hoán đổi cạnh
+    ctx.translate(h / 2, w / 2);
+    ctx.rotate(-Math.PI / 2);                  // xoay 90° ngược chiều kim đồng hồ
+    ctx.drawImage(video, -w / 2, -h / 2, w, h);
+  } else {
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+  }
   photos.push(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
 
   // hiệu ứng nháy + rung nhẹ
@@ -232,7 +247,10 @@ function updateCamCount() {
 $('fileInput').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
-  const img = await createImageBitmap(file);
+  // tôn trọng hướng xoay EXIF của ảnh gốc
+  let img;
+  try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (_) { img = await createImageBitmap(file); }
   const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
   canvas.width = img.width * scale;
