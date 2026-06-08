@@ -2,8 +2,16 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>FieldSnap — Báo cáo hiện trường</title>
+<!-- PWA: mở như app thật, toàn màn hình, có icon ngoài màn hình chính -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a73e8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FieldSnap">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f1f3f4; min-height: 100vh;
@@ -93,7 +101,7 @@
   <div id="camBar">
     <span id="camCount">0 ảnh</span>
     <button id="snapBtn" onclick="snap()">📸</button>
-    <button id="doneBtn" onclick="closeCamera()">Xong ✓</button>
+    <button id="doneBtn" onclick="sendFromCamera()">GỬI ✓</button>
   </div>
 </div>
 
@@ -173,6 +181,13 @@ function snap() {
 function closeCamera() {
   if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
   $('camOverlay').classList.remove('show');
+}
+
+// Lười tối đa: bấm "GỬI ✓" trong camera là đóng + gửi luôn (không quay về form)
+function sendFromCamera() {
+  if (photos.length === 0) { closeCamera(); return; }
+  closeCamera();
+  send();
 }
 
 function updateCamCount() {
