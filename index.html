@@ -112,7 +112,7 @@ const $ = id => document.getElementById(id);
 $('user').value = localStorage.getItem('userName') || '';
 $('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
 
-// Danh sách dự án từ tab "Dự án"
+// Danh sách dự án từ tab "Dự án" — nhớ dự án đã chọn lần trước (thao tác nhanh)
 fetch(API_URL + '?action=projects')
   .then(r => r.json())
   .then(data => {
@@ -123,8 +123,16 @@ fetch(API_URL + '?action=projects')
         $('project').appendChild(opt);
       }
     }
+    // khôi phục lựa chọn lần trước
+    const saved = localStorage.getItem('lastProject');
+    if (saved && [...$('project').options].some(o => o.value === saved)) {
+      $('project').value = saved;
+    }
   })
   .catch(() => {});
+
+// lưu mỗi khi đổi dự án
+$('project').addEventListener('change', e => localStorage.setItem('lastProject', e.target.value));
 
 // ===== CAMERA TRONG TRANG — CHỤP LIÊN TỤC =====
 async function openCamera() {
