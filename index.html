@@ -65,6 +65,18 @@
               background: rgba(0,0,0,.6); color: #fff; font-size: 20px; cursor: pointer; z-index: 2; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
            transition: opacity .12s; }
+
+  /* Modal chọn thư mục Drive */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9998;
+              display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal-bg.show { display: flex; }
+  .modal { background: #fff; border-radius: 14px; padding: 18px; width: 100%; max-width: 420px;
+           max-height: 82vh; overflow: auto; }
+  .modal h3 { font-size: 17px; margin-bottom: 10px; }
+  .folder-item { padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-top: 8px;
+                 cursor: pointer; }
+  .folder-item:active { background: #e8f0fe; }
+  .folder-item .fp { font-size: 12px; color: #888; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -99,6 +111,17 @@
 
   <button class="btn btn-send" id="sendBtn" onclick="send()" disabled>☁️ GỬI BÁO CÁO</button>
   <div id="status"></div>
+</div>
+
+<!-- Modal chọn thư mục Drive (cho điện thoại, khỏi copy link) -->
+<div id="folderModal" class="modal-bg">
+  <div class="modal">
+    <h3 id="fmTitle">Chọn thư mục lưu</h3>
+    <input type="text" id="folderQuery" placeholder="Gõ tên thư mục cần tìm...">
+    <button class="btn btn-camera" style="margin-top:8px" onclick="searchFolders()">🔍 Tìm thư mục</button>
+    <div id="folderResults"></div>
+    <button style="margin-top:12px;background:none;border:none;color:#666;cursor:pointer;font-size:15px" onclick="closeFolderModal()">Đóng</button>
+  </div>
 </div>
 
 <!-- Camera chụp liên tục -->
@@ -156,30 +179,52 @@ fetch(API_URL + '?action=projects')
 // lưu mỗi khi đổi dự án
 $('project').addEventListener('change', e => localStorage.setItem('lastProject', e.target.value));
 
-// 📁 Đặt thư mục Drive lưu ảnh cho dự án đang chọn
-$('setFolder').addEventListener('click', async () => {
+// 📁 Chọn thư mục Drive bằng cách TÌM + BẤM CHỌN (điện thoại khỏi copy link)
+let folderTargetProject = null;
+$('setFolder').addEventListener('click', () => {
   const pv = $('project').value;
   if (pv === 'auto') { alert('Hãy chọn 1 dự án cụ thể trước (không phải "Tự động theo GPS").'); return; }
-  const link = (prompt(
-    'Dán LINK thư mục Google Drive để lưu ảnh dự án "' + pv + '":\n\n' +
-    'Cách lấy: mở thư mục trong Google Drive → copy đường dẫn trên thanh địa chỉ trình duyệt.'
-  ) || '').trim();
-  if (!link) return;
-  $('setFolder').textContent = '⏳ Đang lưu...';
+  folderTargetProject = pv;
+  $('fmTitle').textContent = '📁 Thư mục lưu cho: ' + pv;
+  $('folderQuery').value = '';
+  $('folderResults').innerHTML = '<p style="color:#888;font-size:13px;margin-top:10px">Gõ tên thư mục rồi bấm Tìm. Để trống → liệt kê thư mục gần đây.</p>';
+  $('folderModal').classList.add('show');
+});
+function closeFolderModal() { $('folderModal').classList.remove('show'); }
+
+async function searchFolders() {
+  const q = $('folderQuery').value.trim();
+  $('folderResults').innerHTML = '⏳ Đang tìm...';
   try {
     const res = await fetch(API_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ key: SECRET_KEY, action: 'setProjectFolder', project: pv, folder: link })
+      body: JSON.stringify({ key: SECRET_KEY, action: 'searchFolders', query: q })
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
-    alert('✅ Ảnh dự án "' + pv + '" sẽ lưu vào thư mục:\n📁 ' + data.folderName + ' / <tháng>');
-  } catch (e) {
-    alert('❌ ' + e.message);
-  } finally {
-    $('setFolder').textContent = '📁 Thư mục lưu';
-  }
-});
+    if (!data.folders.length) { $('folderResults').innerHTML = '<p>Không tìm thấy thư mục nào.</p>'; return; }
+    const esc = s => String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    $('folderResults').innerHTML = data.folders.map(f =>
+      '<div class="folder-item" onclick="pickFolder(\'' + f.id + '\', this)">' +
+      '<b>📁 ' + esc(f.name) + '</b>' +
+      (f.parent ? '<div class="fp">trong: ' + esc(f.parent) + '</div>' : '') + '</div>'
+    ).join('');
+  } catch (e) { $('folderResults').innerHTML = '❌ ' + e.message; }
+}
+
+async function pickFolder(id, el) {
+  el.style.background = '#e6f4ea';
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ key: SECRET_KEY, action: 'setProjectFolder', project: folderTargetProject, folder: id })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    closeFolderModal();
+    alert('✅ Ảnh dự án "' + folderTargetProject + '" sẽ lưu vào:\n📁 ' + data.folderName + ' / <tháng>');
+  } catch (e) { alert('❌ ' + e.message); }
+}
 
 // ➕ Thêm dự án ngay trong app
 $('addProj').addEventListener('click', async () => {
