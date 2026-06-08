@@ -95,10 +95,12 @@
     <option value="auto">🤖 Tự động theo GPS</option>
   </select>
 
-  <label>Thông tin cấu kiện (tùy chọn — sẽ đóng dấu lên ảnh)</label>
-  <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
-  <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
-  <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+  <div id="componentFields" style="display:none">
+    <label>Thông tin cấu kiện (đóng dấu lên ảnh — dự án Cầu ống lồng)</label>
+    <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
+    <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
+    <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+  </div>
 
   <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
   <button class="btn btn-camera" onclick="openCamera()">📸 MỞ CAMERA — CHỤP LIÊN TỤC</button>
@@ -173,11 +175,23 @@ fetch(API_URL + '?action=projects')
     if (saved && [...$('project').options].some(o => o.value === saved)) {
       $('project').value = saved;
     }
+    toggleComponentFields();
   })
   .catch(() => {});
 
-// lưu mỗi khi đổi dự án
-$('project').addEventListener('change', e => localStorage.setItem('lastProject', e.target.value));
+// Model/Cổng/Cấu kiện chỉ phục vụ dự án Cầu ống lồng → ẩn/hiện theo dự án
+function usesComponentInfo() {
+  return /ống lồng/i.test($('project').value);
+}
+function toggleComponentFields() {
+  $('componentFields').style.display = usesComponentInfo() ? 'block' : 'none';
+}
+
+// lưu + cập nhật hiển thị mỗi khi đổi dự án
+$('project').addEventListener('change', e => {
+  localStorage.setItem('lastProject', e.target.value);
+  toggleComponentFields();
+});
 
 // 📁 Chọn thư mục Drive bằng cách TÌM + BẤM CHỌN (điện thoại khỏi copy link)
 let folderTargetProject = null;
@@ -292,9 +306,10 @@ function drawStamp(ctx, W, H) {
                `${p(now.getHours())}:${p(now.getMinutes())}`;
   const pv = $('project').value;
   const proj = pv === 'auto' ? 'Tự động theo GPS' : pv;
-  const model = ($('model').value || '').trim();
-  const gate  = ($('gate').value || '').trim();
-  const unit  = ($('unit').value || '').trim();
+  const useC = usesComponentInfo();
+  const model = useC ? ($('model').value || '').trim() : '';
+  const gate  = useC ? ($('gate').value || '').trim() : '';
+  const unit  = useC ? ($('unit').value || '').trim() : '';
   const user  = ($('user').value || '').trim();
 
   // [label, value, isTitle]
@@ -359,17 +374,21 @@ function snap() {
   const scale = Math.min(1, 1280 / Math.max(vw, vh));
   const w = Math.round(vw * scale), h = Math.round(vh * scale);
 
-  // Ảnh từ camera trong trang KHÔNG có dữ liệu xoay EXIF → tự xoay cho thẳng đứng
-  // khi cầm điện thoại dọc nhưng cảm biến trả khung hình ngang.
+  // Ảnh từ camera trong trang KHÔNG có dữ liệu xoay EXIF → tự xoay cho ĐÚNG hướng cầm máy:
+  // cầm dọc → ảnh dọc, cầm ngang → ảnh ngang. Chiều xoay xác định theo góc màn hình.
   const portrait = window.matchMedia('(orientation: portrait)').matches;
-  const needRotate = portrait && w > h;
+  const frameLandscape = w > h;
+  const needRotate = portrait !== frameLandscape;   // hướng khung ảnh chưa khớp hướng máy
+  let angle = 0;
+  try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
+  const clockwise = (angle === 180 || angle === 270); // xoay thuận/ngược tùy chiều cầm
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (needRotate) {
     canvas.width = h; canvas.height = w;       // hoán đổi cạnh
-    ctx.translate(h / 2, w / 2);
-    ctx.rotate(-Math.PI / 2);                  // xoay 90° ngược chiều kim đồng hồ
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(clockwise ? Math.PI / 2 : -Math.PI / 2);
     ctx.drawImage(video, -w / 2, -h / 2, w, h);
   } else {
     canvas.width = w; canvas.height = h;
@@ -473,9 +492,9 @@ async function send() {
         note: $('note').value.trim(),
         user: $('user').value.trim(),
         project: $('project').value,
-        model: $('model').value.trim(),
-        gate: $('gate').value.trim(),
-        unit: $('unit').value.trim(),
+        model: usesComponentInfo() ? $('model').value.trim() : '',
+        gate: usesComponentInfo() ? $('gate').value.trim() : '',
+        unit: usesComponentInfo() ? $('unit').value.trim() : '',
         ocrText: '',
         entities: []
       })
