@@ -80,6 +80,11 @@
     <option value="auto">🤖 Tự động theo GPS</option>
   </select>
 
+  <label>Thông tin cấu kiện (tùy chọn — sẽ đóng dấu lên ảnh)</label>
+  <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
+  <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
+  <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+
   <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
   <button class="btn btn-camera" onclick="openCamera()">📸 MỞ CAMERA — CHỤP LIÊN TỤC</button>
 
@@ -119,6 +124,12 @@ const $ = id => document.getElementById(id);
 
 $('user').value = localStorage.getItem('userName') || '';
 $('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
+
+// Nhớ Model / Cổng / Cấu kiện (đặc thù dự án Cầu ống lồng) — gõ 1 lần, giữ cho lần sau
+['model', 'gate', 'unit'].forEach(id => {
+  $(id).value = localStorage.getItem('fs_' + id) || '';
+  $(id).addEventListener('input', e => localStorage.setItem('fs_' + id, e.target.value));
+});
 
 // Danh sách dự án từ tab "Dự án" — nhớ dự án đã chọn lần trước (thao tác nhanh)
 fetch(API_URL + '?action=projects')
@@ -190,7 +201,17 @@ async function openCamera() {
   }
 }
 
-// Đóng dấu Thời gian + Dự án + GPS vào góc dưới ảnh (in chìm vào ảnh)
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Đóng dấu THẺ THÔNG TIN vào góc dưới phải ảnh (Project / Model / Cổng / Cấu kiện + giờ + GPS)
 function drawStamp(ctx, W, H) {
   const now = new Date();
   const p = n => String(n).padStart(2, '0');
@@ -198,30 +219,61 @@ function drawStamp(ctx, W, H) {
                `${p(now.getHours())}:${p(now.getMinutes())}`;
   const pv = $('project').value;
   const proj = pv === 'auto' ? 'Tự động theo GPS' : pv;
-  const user = ($('user').value || '').trim();
+  const model = ($('model').value || '').trim();
+  const gate  = ($('gate').value || '').trim();
+  const unit  = ($('unit').value || '').trim();
+  const user  = ($('user').value || '').trim();
 
-  const lines = [];
-  lines.push('🕒 ' + time + (user ? '   •   ' + user : ''));
-  lines.push('📁 ' + proj);
-  if (lat !== null) lines.push('📍 ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+  // [label, value, isTitle]
+  const rows = [['Dự án', proj]];
+  if (model) rows.push(['Model', model]);
+  if (gate)  rows.push(['Cổng', gate]);
+  if (unit)  rows.push(['Cấu kiện', unit, true]);
+  rows.push(['Thời gian', time + (user ? '  •  ' + user : '')]);
+  if (lat !== null) rows.push(['GPS', lat.toFixed(5) + ', ' + lng.toFixed(5)]);
 
-  const fs = Math.max(15, Math.round(W * 0.030));
-  const lh = Math.round(fs * 1.4);
-  const padX = Math.round(fs * 0.6);
-  const barH = lh * lines.length + Math.round(fs * 0.7);
+  const fs = Math.max(14, Math.round(W * 0.026));
+  const lh = Math.round(fs * 1.45);
+  const titleLh = Math.round(fs * 1.75);
+  const padX = Math.round(fs * 0.8), padY = Math.round(fs * 0.7);
 
-  // nền mờ
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, H - barH, W, barH);
-  // vạch xanh nhấn mép trái
-  ctx.fillStyle = '#1a73e8';
-  ctx.fillRect(0, H - barH, Math.round(fs * 0.25), barH);
+  // đo bề rộng tối đa
+  let maxW = 0;
+  rows.forEach(r => {
+    ctx.font = r[2] ? `bold ${Math.round(fs * 1.3)}px Arial` : `${fs}px Arial`;
+    const txt = r[2] ? r[1] : (r[0] + ': ' + r[1]);
+    maxW = Math.max(maxW, ctx.measureText(txt).width);
+  });
+  const cardW = Math.min(W - fs, maxW + padX * 2);
+  let cardH = padY * 2;
+  rows.forEach(r => cardH += r[2] ? titleLh : lh);
+
+  const x = W - cardW - Math.round(fs * 0.6);
+  const y = H - cardH - Math.round(fs * 0.6);
+
+  // nền thẻ (xanh teal bán trong suốt)
+  ctx.fillStyle = 'rgba(30, 96, 100, 0.9)';
+  roundRect(ctx, x, y, cardW, cardH, Math.round(fs * 0.4));
+  ctx.fill();
 
   ctx.textBaseline = 'top';
-  ctx.font = `bold ${fs}px Arial, sans-serif`;
-  ctx.fillStyle = '#ffffff';
-  lines.forEach((ln, i) =>
-    ctx.fillText(ln, padX + Math.round(fs * 0.3), H - barH + Math.round(fs * 0.4) + i * lh));
+  let cy = y + padY;
+  rows.forEach(r => {
+    if (r[2]) {
+      ctx.font = `bold ${Math.round(fs * 1.3)}px Arial`;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(r[1], x + padX, cy);
+      cy += titleLh;
+    } else {
+      ctx.font = `${fs}px Arial`;
+      const label = r[0] + ': ';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(label, x + padX, cy);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(r[1], x + padX + ctx.measureText(label).width, cy);
+      cy += lh;
+    }
+  });
 }
 
 function snap() {
@@ -345,6 +397,9 @@ async function send() {
         note: $('note').value.trim(),
         user: $('user').value.trim(),
         project: $('project').value,
+        model: $('model').value.trim(),
+        gate: $('gate').value.trim(),
+        unit: $('unit').value.trim(),
         ocrText: '',
         entities: []
       })
