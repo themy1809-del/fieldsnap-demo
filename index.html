@@ -37,17 +37,24 @@
                 font-size: 13px; line-height: 22px; cursor: pointer; padding: 0; }
 
   /* Camera toàn màn hình — chụp liên tục */
-  #camOverlay { position: fixed; inset: 0; background: #000; z-index: 50; display: none;
-                flex-direction: column; }
+  #camOverlay { position: fixed; inset: 0; height: 100dvh; background: #000; z-index: 9999;
+                display: none; flex-direction: column; }
   #camOverlay.show { display: flex; }
-  #camVideo { flex: 1; width: 100%; object-fit: cover; }
-  #camBar { display: flex; align-items: center; justify-content: space-around; padding: 14px;
-            background: rgba(0,0,0,.85); }
-  #snapBtn { width: 72px; height: 72px; border-radius: 50%; border: 5px solid #fff;
-             background: #1a73e8; color: #fff; font-size: 26px; cursor: pointer; }
+  #camVideo { flex: 1; width: 100%; min-height: 0; object-fit: cover; }
+  /* Thanh điều khiển: luôn nổi trên vùng an toàn, không bị thanh trình duyệt che */
+  #camBar { display: flex; align-items: center; justify-content: space-around;
+            padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 12px));
+            background: rgba(0,0,0,.9); flex-shrink: 0; }
+  #snapBtn { width: 76px; height: 76px; border-radius: 50%; border: 5px solid #fff;
+             background: #1a73e8; color: #fff; font-size: 28px; cursor: pointer; flex-shrink: 0; }
+  #snapBtn:active { transform: scale(.92); }
   #doneBtn { background: #188038; color: #fff; border: none; border-radius: 10px;
-             padding: 14px 22px; font-size: 16px; font-weight: 600; cursor: pointer; }
-  #camCount { color: #fff; font-size: 17px; font-weight: 700; min-width: 64px; text-align: center; }
+             padding: 14px 20px; font-size: 16px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+  #camCount { color: #fff; font-size: 17px; font-weight: 700; min-width: 60px; text-align: center; }
+  /* Nút đóng khẩn cấp ở góc trên (phòng khi thanh dưới vẫn bị che) */
+  #camClose { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: 14px;
+              width: 40px; height: 40px; border-radius: 50%; border: none;
+              background: rgba(0,0,0,.6); color: #fff; font-size: 20px; cursor: pointer; z-index: 2; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
            transition: opacity .12s; }
 </style>
@@ -80,6 +87,7 @@
 
 <!-- Camera chụp liên tục -->
 <div id="camOverlay">
+  <button id="camClose" onclick="closeCamera()">✕</button>
   <video id="camVideo" autoplay playsinline muted></video>
   <div id="flash"></div>
   <div id="camBar">
