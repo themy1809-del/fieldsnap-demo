@@ -145,6 +145,11 @@
       <button class="tab" id="mfAll" onclick="setMfRange('all')">Tất cả</button>
     </div>
     <div id="manageBody" style="font-size:14px;color:#888">⏳ Đang tải...</div>
+
+    <label style="margin-top:16px">🤖 Hỏi AI về dữ liệu</label>
+    <input type="text" id="askInput" placeholder="VD: Hôm nay ai chụp nhiều nhất? PVF còn thiếu gì?" onkeydown="if(event.key==='Enter')askAI()">
+    <button class="btn btn-camera" style="margin-top:8px" onclick="askAI()">Hỏi AI</button>
+    <div id="askAnswer" style="margin-top:10px"></div>
   </div>
 
   <!-- ========== CHẾ ĐỘ TRA CỨU ========== -->
@@ -590,6 +595,19 @@ function kpi(n, label) {
   return '<div style="flex:1;background:#e8f0fe;border-radius:10px;padding:10px">' +
     '<div style="font-size:22px;font-weight:700;color:#1a73e8">' + n + '</div>' +
     '<div style="font-size:12px;color:#555">' + label + '</div></div>';
+}
+
+async function askAI() {
+  const q = $('askInput').value.trim();
+  if (!q) return;
+  $('askAnswer').className = 'info'; $('askAnswer').style.display = 'block';
+  $('askAnswer').textContent = '🤖 Đang suy nghĩ...';
+  try {
+    const d = await post({ action: 'ask', question: q });
+    if (!d.ok) throw new Error(d.error);
+    $('askAnswer').className = 'ok';
+    $('askAnswer').innerHTML = '🤖 ' + String(d.answer || '').replace(/\n/g, '<br>');
+  } catch (e) { $('askAnswer').className = 'err'; $('askAnswer').textContent = '❌ ' + e.message; }
 }
 
 // ===== Helper POST =====
