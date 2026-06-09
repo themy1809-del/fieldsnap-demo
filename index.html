@@ -97,7 +97,9 @@
   <div class="tabbar">
     <button id="tabBtnCapture" class="tab active" onclick="showTab('capture')">📸 Chụp</button>
     <button id="tabBtnBrowse" class="tab" onclick="showTab('browse')">🔍 Tra cứu</button>
+    <button id="tabBtnManage" class="tab" onclick="showTab('manage')">📊 Quản lý</button>
   </div>
+  <div id="whoami" style="font-size:12px;color:#888;margin-bottom:6px"></div>
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
@@ -134,6 +136,17 @@
     <div id="status"></div>
   </div>
 
+  <!-- ========== CHẾ ĐỘ QUẢN LÝ (cho sếp) ========== -->
+  <div id="secManage" style="display:none">
+    <p class="sub">Theo dõi nhân viên QC: ai chụp, dự án nào, bao nhiêu báo cáo</p>
+    <div class="tabbar" style="margin-bottom:10px">
+      <button class="tab active" id="mfToday" onclick="setMfRange('today')">Hôm nay</button>
+      <button class="tab" id="mf7" onclick="setMfRange('7')">7 ngày</button>
+      <button class="tab" id="mfAll" onclick="setMfRange('all')">Tất cả</button>
+    </div>
+    <div id="manageBody" style="font-size:14px;color:#888">⏳ Đang tải...</div>
+  </div>
+
   <!-- ========== CHẾ ĐỘ TRA CỨU ========== -->
   <div id="secBrowse" style="display:none">
     <p class="sub">Xem lại & tìm ảnh đã chụp theo dự án</p>
@@ -143,6 +156,16 @@
     <input type="text" id="browseSearch" placeholder="Gõ để lọc..." oninput="renderReports()">
     <div id="browseInfo" style="font-size:13px;color:#888;margin-top:8px"></div>
     <div id="browseResults"></div>
+  </div>
+</div>
+
+<!-- Modal nhập tên bắt buộc (lần đầu trên máy này) -->
+<div id="nameModal" class="modal-bg">
+  <div class="modal">
+    <h3>👤 Nhập tên của bạn</h3>
+    <p style="font-size:13px;color:#666;margin-bottom:10px">Máy này sẽ ghi nhớ tên — lần sau không cần nhập lại.</p>
+    <input type="text" id="nameInput" placeholder="VD: Thế Mỹ" autocomplete="name">
+    <button class="btn btn-send" style="margin-top:10px" onclick="saveNameGate()">Lưu & Bắt đầu</button>
   </div>
 </div>
 
@@ -183,17 +206,41 @@ const $ = id => document.getElementById(id);
 
 // ===== TAB =====
 function showTab(t) {
-  const cap = t === 'capture';
-  $('secCapture').style.display = cap ? 'block' : 'none';
-  $('secBrowse').style.display = cap ? 'none' : 'block';
-  $('tabBtnCapture').classList.toggle('active', cap);
-  $('tabBtnBrowse').classList.toggle('active', !cap);
-  if (!cap && allReports.length === 0) loadReports();
+  $('secCapture').style.display = t === 'capture' ? 'block' : 'none';
+  $('secBrowse').style.display = t === 'browse' ? 'block' : 'none';
+  $('secManage').style.display = t === 'manage' ? 'block' : 'none';
+  $('tabBtnCapture').classList.toggle('active', t === 'capture');
+  $('tabBtnBrowse').classList.toggle('active', t === 'browse');
+  $('tabBtnManage').classList.toggle('active', t === 'manage');
+  if (t === 'browse' && allReports.length === 0) loadReports();
+  if (t === 'manage') loadManage();
 }
 
-// ===== Tên người =====
+// ===== ID máy + Tên người (bắt buộc nhập lần đầu, nhớ theo máy) =====
+if (!localStorage.getItem('deviceId'))
+  localStorage.setItem('deviceId', 'dev-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now()));
+const DEVICE_ID = localStorage.getItem('deviceId');
+
+function updateWhoami() {
+  const n = localStorage.getItem('userName') || '';
+  $('whoami').innerHTML = n
+    ? '👤 ' + n + ' <a onclick="changeName()" style="color:#1a73e8;cursor:pointer;margin-left:6px">đổi tên</a>'
+    : '';
+}
+function changeName() { $('nameInput').value = localStorage.getItem('userName') || ''; $('nameModal').classList.add('show'); }
+function saveNameGate() {
+  const n = ($('nameInput').value || '').trim();
+  if (!n) { alert('Vui lòng nhập tên.'); return; }
+  localStorage.setItem('userName', n);
+  $('user').value = n;
+  $('nameModal').classList.remove('show');
+  updateWhoami();
+}
+
 $('user').value = localStorage.getItem('userName') || '';
-$('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
+$('user').addEventListener('input', e => { localStorage.setItem('userName', e.target.value); updateWhoami(); });
+updateWhoami();
+if (!localStorage.getItem('userName')) $('nameModal').classList.add('show');  // bắt buộc lần đầu
 
 ['model','gate','unit'].forEach(id => {
   $(id).value = localStorage.getItem('fs_' + id) || '';
@@ -419,8 +466,8 @@ async function send() {
   try {
     const d = await post({
       reportId: crypto.randomUUID(), images: photos,
-      note: $('note').value.trim(), user: $('user').value.trim(), project: $('project').value,
-      category: $('category').value,
+      note: $('note').value.trim(), user: $('user').value.trim(), deviceId: DEVICE_ID,
+      project: $('project').value, category: $('category').value,
       model: usesComponentInfo() ? $('model').value.trim() : '',
       gate: usesComponentInfo() ? $('gate').value.trim() : '',
       unit: usesComponentInfo() ? $('unit').value.trim() : '',
@@ -479,6 +526,70 @@ function renderReports() {
       (imgs ? '<div class="imgs">' + imgs + '</div>' : '') +
     '</div>';
   }).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
+}
+
+// ===== QUẢN LÝ (cho sếp) =====
+let manageReports = [], mfRange = 'today';
+async function loadManage() {
+  $('manageBody').innerHTML = '⏳ Đang tải...';
+  try {
+    const d = await post({ action: 'listReports', project: '__all__' });
+    if (!d.ok) throw new Error(d.error);
+    manageReports = d.reports || [];
+    renderManage();
+  } catch (e) { $('manageBody').innerHTML = '❌ ' + e.message; }
+}
+function setMfRange(r) {
+  mfRange = r;
+  ['mfToday','mf7','mfAll'].forEach(id => $(id).classList.remove('active'));
+  $(r === 'today' ? 'mfToday' : r === '7' ? 'mf7' : 'mfAll').classList.add('active');
+  renderManage();
+}
+function inRange(t) {
+  const d = new Date(t); if (isNaN(d)) return true;
+  if (mfRange === 'all') return true;
+  const now = new Date();
+  if (mfRange === 'today') return d.toDateString() === now.toDateString();
+  return (now - d) <= 7 * 86400000;
+}
+function renderManage() {
+  const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  const list = manageReports.filter(r => inRange(r.time));
+  const byUser = {}, byProj = {};
+  list.forEach(r => {
+    const u = (r.user || '(không tên)');
+    if (!byUser[u]) byUser[u] = { count: 0, projects: {}, last: '' };
+    byUser[u].count++; byUser[u].projects[r.project] = 1;
+    if (r.time > byUser[u].last) byUser[u].last = r.time;
+    const p = (r.project || '(chưa rõ)');
+    if (!byProj[p]) byProj[p] = { count: 0, users: {} };
+    byProj[p].count++; byProj[p].users[r.user || '(không tên)'] = 1;
+  });
+  const nUsers = Object.keys(byUser).length, nProj = Object.keys(byProj).length;
+
+  let html = '<div style="display:flex;gap:8px;text-align:center;margin-bottom:12px">' +
+    kpi(list.length, 'báo cáo') + kpi(nUsers, 'người chụp') + kpi(nProj, 'dự án') + '</div>';
+
+  html += '<h3 style="font-size:15px;margin:10px 0 4px">👤 Theo nhân viên</h3>';
+  const users = Object.entries(byUser).sort((a,b) => b[1].count - a[1].count);
+  html += users.length ? users.map(([u, v]) =>
+    '<div class="report" style="padding:10px"><b>' + esc(u) + '</b> — <b style="color:#1a73e8">' + v.count + '</b> báo cáo' +
+    '<div class="meta">📁 ' + Object.keys(v.projects).map(esc).join(', ') + '</div>' +
+    '<div class="meta">🕒 gần nhất: ' + esc(fmtTime(v.last)) + '</div></div>').join('')
+    : '<p style="color:#888">Không có dữ liệu trong kỳ.</p>';
+
+  html += '<h3 style="font-size:15px;margin:14px 0 4px">📁 Theo dự án</h3>';
+  const projs = Object.entries(byProj).sort((a,b) => b[1].count - a[1].count);
+  html += projs.map(([p, v]) =>
+    '<div class="report" style="padding:10px"><b>' + esc(p) + '</b> — <b style="color:#188038">' + v.count + '</b> báo cáo' +
+    '<div class="meta">👥 ' + Object.keys(v.users).map(esc).join(', ') + '</div></div>').join('');
+
+  $('manageBody').innerHTML = html;
+}
+function kpi(n, label) {
+  return '<div style="flex:1;background:#e8f0fe;border-radius:10px;padding:10px">' +
+    '<div style="font-size:22px;font-weight:700;color:#1a73e8">' + n + '</div>' +
+    '<div style="font-size:12px;color:#555">' + label + '</div></div>';
 }
 
 // ===== Helper POST =====
