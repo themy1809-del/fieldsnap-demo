@@ -224,8 +224,7 @@ function fillCategories() {
     cats.map(c => '<option value="' + c.replace(/"/g,'&quot;') + '">' + c + '</option>').join('');
 }
 
-fetch(API_URL + '?action=projectsFull')
-  .then(r => r.json())
+post({ action: 'projectsFull' })
   .then(d => { if (d.ok) fillProjectSelects(d.projects || []); })
   .catch(() => {});
 
