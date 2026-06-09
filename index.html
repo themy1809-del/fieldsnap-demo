@@ -112,6 +112,9 @@
     </label>
     <select id="project"></select>
 
+    <label>Hạng mục <a id="addCat" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer">➕ Thêm</a></label>
+    <select id="category"><option value="">— AI tự phân loại —</option></select>
+
     <div id="componentFields" style="display:none">
       <label>Thông tin cấu kiện (đóng dấu lên ảnh — dự án Cầu ống lồng)</label>
       <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
@@ -197,25 +200,55 @@ $('user').addEventListener('input', e => localStorage.setItem('userName', e.targ
   $(id).addEventListener('input', e => localStorage.setItem('fs_' + id, e.target.value));
 });
 
-// ===== Danh sách dự án (cho cả Chụp & Tra cứu) =====
+// ===== Danh sách dự án + hạng mục riêng từng dự án =====
+const ALL = '__all__';
+let projConfigs = {};   // { tên dự án: { categories: [...] } }
+
 function fillProjectSelects(projects) {
+  const names = projects.map(p => p.name);
+  projConfigs = {};
+  projects.forEach(p => projConfigs[p.name] = { categories: p.categories || [] });
   const saved = localStorage.getItem('lastProject');
-  const opts = projects.map(p => '<option value="' + p.replace(/"/g,'&quot;') + '">' + p + '</option>').join('');
+  const opts = names.map(n => '<option value="' + n.replace(/"/g,'&quot;') + '">' + n + '</option>').join('');
   $('project').innerHTML = opts || '<option value="">(Chưa có dự án — bấm ➕ Thêm)</option>';
   $('browseProject').innerHTML = '<option value="' + ALL + '">— Tất cả dự án —</option>' + opts;
-  if (saved && projects.includes(saved)) $('project').value = saved;
+  if (saved && names.includes(saved)) $('project').value = saved;
+  fillCategories();
   toggleComponentFields();
 }
-const ALL = '__all__';
 
-fetch(API_URL + '?action=projects')
+function fillCategories() {
+  const cfg = projConfigs[$('project').value];
+  const cats = cfg ? cfg.categories : [];
+  $('category').innerHTML = '<option value="">— AI tự phân loại —</option>' +
+    cats.map(c => '<option value="' + c.replace(/"/g,'&quot;') + '">' + c + '</option>').join('');
+}
+
+fetch(API_URL + '?action=projectsFull')
   .then(r => r.json())
   .then(d => { if (d.ok) fillProjectSelects(d.projects || []); })
   .catch(() => {});
 
 $('project').addEventListener('change', e => {
   localStorage.setItem('lastProject', e.target.value);
+  fillCategories();
   toggleComponentFields();
+});
+
+// ➕ Thêm hạng mục cho dự án đang chọn
+$('addCat').addEventListener('click', async () => {
+  const pv = $('project').value;
+  if (!pv) { alert('Hãy chọn/thêm dự án trước.'); return; }
+  const cat = (prompt('Tên hạng mục mới cho dự án "' + pv + '":') || '').trim();
+  if (!cat) return;
+  try {
+    const d = await post({ action: 'addCategory', project: pv, category: cat });
+    if (!d.ok) throw new Error(d.error);
+    projConfigs[pv] = { categories: d.categories };
+    fillCategories();
+    $('category').value = cat;
+    alert('✅ Đã thêm hạng mục: ' + cat);
+  } catch (e) { alert('❌ ' + e.message); }
 });
 
 function usesComponentInfo() { return /ống lồng/i.test($('project').value); }
@@ -230,10 +263,11 @@ $('addProj').addEventListener('click', async () => {
   try {
     const d = await post({ action: 'addProject', name });
     if (!d.ok) throw new Error(d.error);
-    fillProjectSelects(d.projects);
+    const full = await post({ action: 'projectsFull' });
+    if (full.ok) fillProjectSelects(full.projects);
     $('project').value = name;
     localStorage.setItem('lastProject', name);
-    toggleComponentFields();
+    fillCategories(); toggleComponentFields();
     alert('✅ Đã thêm dự án: ' + name);
   } catch (e) { alert('❌ ' + e.message); }
 });
@@ -348,8 +382,10 @@ function drawStamp(ctx, W, H) {
   const gate  = useC ? ($('gate').value || '').trim() : '';
   const unit  = useC ? ($('unit').value || '').trim() : '';
   const user  = ($('user').value || '').trim();
+  const cat = $('category').value;
   const rows = [];
   if (proj) rows.push(['Dự án', proj]);
+  if (cat) rows.push(['Hạng mục', cat]);
   if (model) rows.push(['Model', model]);
   if (gate)  rows.push(['Cổng', gate]);
   if (unit)  rows.push(['Cấu kiện', unit, true]);
@@ -385,6 +421,7 @@ async function send() {
     const d = await post({
       reportId: crypto.randomUUID(), images: photos,
       note: $('note').value.trim(), user: $('user').value.trim(), project: $('project').value,
+      category: $('category').value,
       model: usesComponentInfo() ? $('model').value.trim() : '',
       gate: usesComponentInfo() ? $('gate').value.trim() : '',
       unit: usesComponentInfo() ? $('unit').value.trim() : '',
