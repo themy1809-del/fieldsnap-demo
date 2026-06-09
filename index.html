@@ -517,33 +517,34 @@ function fmtTime(t) {
   const p = n => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+function reportCardHTML(r) {
+  const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  const title = r.unit || r.category || '(chưa phân loại)';
+  const tags = [r.model, r.gate].filter(Boolean).map(t => '<span class="chip">' + esc(t) + '</span>').join('');
+  const imgs = (r.images || []).map(u =>
+    '<a href="' + u + '" target="_blank"><img loading="lazy" src="' + thumbUrl(u) + '"></a>').join('');
+  return '<div class="report">' +
+    '<div class="title">' + esc(title) + '</div>' +
+    '<div class="meta">🕒 ' + esc(fmtTime(r.time)) + (r.user ? ' • 👤 ' + esc(r.user) : '') +
+      ' • 📁 ' + esc(r.project) + '</div>' +
+    (tags ? '<div style="margin-top:4px">' + tags + (r.category ? '<span class="chip" style="background:#fff3e0;color:#e65100">' + esc(r.category) + '</span>' : '') + '</div>' : '') +
+    (r.description ? '<div class="desc">🤖 ' + esc(r.description) + '</div>' : '') +
+    (r.issues ? '<div class="warn">⚠️ ' + esc(r.issues).replace(/\n/g,'<br>') + '</div>' : '') +
+    (r.note ? '<div class="desc">📝 ' + esc(r.note) + '</div>' : '') +
+    (imgs ? '<div class="imgs">' + imgs + '</div>' : '') +
+  '</div>';
+}
 function renderReports() {
   const q = $('browseSearch').value.trim().toLowerCase();
   const list = allReports.filter(r => !q ||
     [r.time, r.project, r.category, r.description, r.note, r.user, r.model, r.gate, r.unit]
     .join(' ').toLowerCase().includes(q));
   $('browseInfo').textContent = list.length + ' báo cáo' + (q ? ' (lọc)' : '');
-  const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
-  $('browseResults').innerHTML = list.map(r => {
-    const title = r.unit || r.category || '(chưa phân loại)';
-    const tags = [r.model, r.gate].filter(Boolean).map(t => '<span class="chip">' + esc(t) + '</span>').join('');
-    const imgs = (r.images || []).map(u =>
-      '<a href="' + u + '" target="_blank"><img loading="lazy" src="' + thumbUrl(u) + '"></a>').join('');
-    return '<div class="report">' +
-      '<div class="title">' + esc(title) + '</div>' +
-      '<div class="meta">🕒 ' + esc(fmtTime(r.time)) + (r.user ? ' • 👤 ' + esc(r.user) : '') +
-        ' • 📁 ' + esc(r.project) + '</div>' +
-      (tags ? '<div style="margin-top:4px">' + tags + (r.category ? '<span class="chip" style="background:#fff3e0;color:#e65100">' + esc(r.category) + '</span>' : '') + '</div>' : '') +
-      (r.description ? '<div class="desc">🤖 ' + esc(r.description) + '</div>' : '') +
-      (r.issues ? '<div class="warn">⚠️ ' + esc(r.issues).replace(/\n/g,'<br>') + '</div>' : '') +
-      (r.note ? '<div class="desc">📝 ' + esc(r.note) + '</div>' : '') +
-      (imgs ? '<div class="imgs">' + imgs + '</div>' : '') +
-    '</div>';
-  }).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
+  $('browseResults').innerHTML = list.map(reportCardHTML).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
 }
 
 // ===== QUẢN LÝ (cho sếp) =====
-let manageReports = [], mfRange = 'today';
+let manageReports = [], mfRange = 'today', _muKeys = [], _mpKeys = [];
 async function loadManage() {
   $('manageBody').innerHTML = '⏳ Đang tải...';
   try {
@@ -584,19 +585,29 @@ function renderManage() {
   let html = '<div style="display:flex;gap:8px;text-align:center;margin-bottom:12px">' +
     kpi(list.length, 'báo cáo') + kpi(nUsers, 'người chụp') + kpi(nProj, 'dự án') + '</div>';
 
-  html += '<h3 style="font-size:15px;margin:10px 0 4px">👤 Theo nhân viên</h3>';
+  _muKeys = []; _mpKeys = [];
+  html += '<h3 style="font-size:15px;margin:10px 0 4px">👤 Theo nhân viên <span style="font-size:11px;color:#888;font-weight:400">(bấm để xem báo cáo)</span></h3>';
   const users = Object.entries(byUser).sort((a,b) => b[1].count - a[1].count);
-  html += users.length ? users.map(([u, v]) =>
-    '<div class="report" style="padding:10px"><b>' + esc(u) + '</b> — <b style="color:#1a73e8">' + v.count + '</b> báo cáo' +
-    '<div class="meta">📁 ' + Object.keys(v.projects).map(esc).join(', ') + '</div>' +
-    '<div class="meta">🕒 gần nhất: ' + esc(fmtTime(v.last)) + '</div></div>').join('')
-    : '<p style="color:#888">Không có dữ liệu trong kỳ.</p>';
+  html += users.length ? users.map(([u, v]) => {
+    const i = _muKeys.push(u) - 1;
+    return '<div class="report" style="padding:10px;cursor:pointer" onclick="toggleMU(' + i + ')">' +
+      '<span id="muCh' + i + '" style="float:right;color:#1a73e8;font-weight:700">▸</span>' +
+      '<b>' + esc(u) + '</b> — <b style="color:#1a73e8">' + v.count + '</b> báo cáo' +
+      '<div class="meta">📁 ' + Object.keys(v.projects).map(esc).join(', ') + '</div>' +
+      '<div class="meta">🕒 gần nhất: ' + esc(fmtTime(v.last)) + '</div></div>' +
+      '<div id="muBody' + i + '" style="display:none;margin:-4px 0 10px 8px;padding-left:8px;border-left:3px solid #d2e3fc"></div>';
+  }).join('') : '<p style="color:#888">Không có dữ liệu trong kỳ.</p>';
 
-  html += '<h3 style="font-size:15px;margin:14px 0 4px">📁 Theo dự án</h3>';
+  html += '<h3 style="font-size:15px;margin:14px 0 4px">📁 Theo dự án <span style="font-size:11px;color:#888;font-weight:400">(bấm để xem báo cáo)</span></h3>';
   const projs = Object.entries(byProj).sort((a,b) => b[1].count - a[1].count);
-  html += projs.map(([p, v]) =>
-    '<div class="report" style="padding:10px"><b>' + esc(p) + '</b> — <b style="color:#188038">' + v.count + '</b> báo cáo' +
-    '<div class="meta">👥 ' + Object.keys(v.users).map(esc).join(', ') + '</div></div>').join('');
+  html += projs.map(([p, v]) => {
+    const i = _mpKeys.push(p) - 1;
+    return '<div class="report" style="padding:10px;cursor:pointer" onclick="toggleMP(' + i + ')">' +
+      '<span id="mpCh' + i + '" style="float:right;color:#188038;font-weight:700">▸</span>' +
+      '<b>' + esc(p) + '</b> — <b style="color:#188038">' + v.count + '</b> báo cáo' +
+      '<div class="meta">👥 ' + Object.keys(v.users).map(esc).join(', ') + '</div></div>' +
+      '<div id="mpBody' + i + '" style="display:none;margin:-4px 0 10px 8px;padding-left:8px;border-left:3px solid #b7e1c4"></div>';
+  }).join('');
 
   $('manageBody').innerHTML = html;
 }
@@ -604,6 +615,23 @@ function kpi(n, label) {
   return '<div style="flex:1;background:#e8f0fe;border-radius:10px;padding:10px">' +
     '<div style="font-size:22px;font-weight:700;color:#1a73e8">' + n + '</div>' +
     '<div style="font-size:12px;color:#555">' + label + '</div></div>';
+}
+function _mSort(a, b) { return String(b.time || '').localeCompare(String(a.time || '')); }
+function toggleMU(i) {
+  const key = _muKeys[i], body = $('muBody' + i), ch = $('muCh' + i); if (!body) return;
+  if (body.style.display === 'none') {
+    const rs = manageReports.filter(r => inRange(r.time) && (r.user || '(không tên)') === key).sort(_mSort);
+    body.innerHTML = rs.map(reportCardHTML).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
+    body.style.display = 'block'; if (ch) ch.textContent = '▾';
+  } else { body.style.display = 'none'; if (ch) ch.textContent = '▸'; }
+}
+function toggleMP(i) {
+  const key = _mpKeys[i], body = $('mpBody' + i), ch = $('mpCh' + i); if (!body) return;
+  if (body.style.display === 'none') {
+    const rs = manageReports.filter(r => inRange(r.time) && (r.project || '(chưa rõ)') === key).sort(_mSort);
+    body.innerHTML = rs.map(reportCardHTML).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
+    body.style.display = 'block'; if (ch) ch.textContent = '▾';
+  } else { body.style.display = 'none'; if (ch) ch.textContent = '▸'; }
 }
 
 async function askAI() {
@@ -691,6 +719,8 @@ async function flushOutbox(manual) {
   } finally { _flushing = false; }
 }
 
+// Xin quyền lưu bền — trình duyệt cam kết không tự dọn dữ liệu app chờ gửi
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
 // Tự gửi lại khi có mạng trở lại + khi mở app (gửi nốt báo cáo còn tồn)
 window.addEventListener('online', () => flushOutbox());
 flushOutbox();
