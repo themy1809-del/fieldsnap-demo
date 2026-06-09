@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>FieldSnap — Báo cáo hiện trường</title>
-<!-- PWA: mở như app thật, toàn màn hình, có icon ngoài màn hình chính -->
+<title>FieldSnap — Báo cáo & Tra cứu hiện trường</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a73e8">
 <meta name="mobile-web-app-capable" content="yes">
@@ -15,16 +14,16 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, sans-serif; background: #f1f3f4; min-height: 100vh;
-         display: flex; justify-content: center; padding: 16px; }
-  .card { background: #fff; border-radius: 16px; padding: 24px; max-width: 440px; width: 100%;
+         display: flex; justify-content: center; padding: 12px; }
+  .card { background: #fff; border-radius: 16px; padding: 20px; max-width: 460px; width: 100%;
           box-shadow: 0 2px 12px rgba(0,0,0,.08); height: fit-content; }
-  h1 { font-size: 22px; color: #1a73e8; margin-bottom: 4px; }
-  .sub { color: #666; font-size: 14px; margin-bottom: 20px; }
-  label { font-size: 13px; font-weight: 600; color: #444; display: block; margin: 14px 0 4px; }
+  h1 { font-size: 20px; color: #1a73e8; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 14px; }
+  label { font-size: 13px; font-weight: 600; color: #444; display: block; margin: 12px 0 4px; }
   input[type=text], textarea, select { width: 100%; padding: 10px; border: 1px solid #ccc;
           border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff; }
   .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px;
-         font-weight: 600; cursor: pointer; margin-top: 16px; }
+         font-weight: 600; cursor: pointer; margin-top: 14px; }
   .btn-camera { background: #1a73e8; color: #fff; }
   .btn-send { background: #188038; color: #fff; }
   .btn:disabled { background: #ccc; cursor: not-allowed; }
@@ -32,24 +31,28 @@
   .ok  { background: #e6f4ea; color: #188038; display: block !important; }
   .err { background: #fce8e6; color: #c5221f; display: block !important; }
   .info{ background: #e8f0fe; color: #1a73e8; display: block !important; }
-  .warn{ background: #fce8e6; color: #c5221f; padding: 10px; border-radius: 8px; margin-top: 8px; }
-  #gps { font-size: 13px; color: #666; margin-top: 8px; }
+  .warn{ background: #fce8e6; color: #c5221f; padding: 8px; border-radius: 8px; margin-top: 6px; }
 
-  /* Dải thumbnail ảnh đã chụp */
+  /* Tab bar */
+  .tabbar { display: flex; gap: 6px; margin-bottom: 8px; }
+  .tab { flex: 1; padding: 12px; border: none; border-radius: 10px; font-size: 15px;
+         font-weight: 700; cursor: pointer; background: #eceff1; color: #555; }
+  .tab.active { background: #1a73e8; color: #fff; }
+
+  /* Thumbnail dải ảnh đã chụp */
   #thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .thumb { position: relative; width: 72px; height: 72px; border-radius: 10px; overflow: hidden;
+  .thumb { position: relative; width: 70px; height: 70px; border-radius: 10px; overflow: hidden;
            border: 2px solid #1a73e8; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
   .thumb .del { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
                 border-radius: 50%; border: none; background: rgba(0,0,0,.65); color: #fff;
                 font-size: 13px; line-height: 22px; cursor: pointer; padding: 0; }
 
-  /* Camera toàn màn hình — chụp liên tục */
+  /* Camera toàn màn hình */
   #camOverlay { position: fixed; inset: 0; height: 100dvh; background: #000; z-index: 9999;
                 display: none; flex-direction: column; }
   #camOverlay.show { display: flex; }
   #camVideo { flex: 1; width: 100%; min-height: 0; object-fit: cover; }
-  /* Thanh điều khiển: luôn nổi trên vùng an toàn, không bị thanh trình duyệt che */
   #camBar { display: flex; align-items: center; justify-content: space-around;
             padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 12px));
             background: rgba(0,0,0,.9); flex-shrink: 0; }
@@ -59,63 +62,88 @@
   #doneBtn { background: #188038; color: #fff; border: none; border-radius: 10px;
              padding: 14px 20px; font-size: 16px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
   #camCount { color: #fff; font-size: 17px; font-weight: 700; min-width: 60px; text-align: center; }
-  /* Nút đóng khẩn cấp ở góc trên (phòng khi thanh dưới vẫn bị che) */
   #camClose { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: 14px;
               width: 40px; height: 40px; border-radius: 50%; border: none;
               background: rgba(0,0,0,.6); color: #fff; font-size: 20px; cursor: pointer; z-index: 2; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
            transition: opacity .12s; }
 
-  /* Modal chọn thư mục Drive */
+  /* Modal chọn thư mục */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9998;
               display: none; align-items: center; justify-content: center; padding: 16px; }
   .modal-bg.show { display: flex; }
   .modal { background: #fff; border-radius: 14px; padding: 18px; width: 100%; max-width: 420px;
            max-height: 82vh; overflow: auto; }
   .modal h3 { font-size: 17px; margin-bottom: 10px; }
-  .folder-item { padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-top: 8px;
-                 cursor: pointer; }
+  .folder-item { padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-top: 8px; cursor: pointer; }
   .folder-item:active { background: #e8f0fe; }
   .folder-item .fp { font-size: 12px; color: #888; margin-top: 2px; }
+
+  /* Gallery tra cứu */
+  #browseResults { margin-top: 12px; }
+  .report { border: 1px solid #e0e0e0; border-radius: 12px; padding: 12px; margin-top: 12px; }
+  .report .meta { font-size: 13px; color: #555; }
+  .report .title { font-weight: 700; font-size: 15px; margin-bottom: 2px; }
+  .report .desc { font-size: 13px; color: #333; margin-top: 6px; }
+  .report .imgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .report .imgs a { width: 72px; height: 72px; border-radius: 8px; overflow: hidden; display: block; background: #eee; }
+  .report .imgs img { width: 100%; height: 100%; object-fit: cover; }
+  .chip { display: inline-block; background: #e8f0fe; color: #1a73e8; border-radius: 6px;
+          padding: 1px 7px; font-size: 12px; font-weight: 600; margin-right: 4px; }
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>📷 FieldSnap</h1>
-  <p class="sub">Chụp nhiều ảnh liên tục → AI phân tích → lưu Google Sheet</p>
-
-  <label>Tên của bạn</label>
-  <input type="text" id="user" placeholder="VD: Thế Mỹ">
-
-  <label>Dự án
-    <a id="setFolder" style="float:right;color:#188038;font-weight:600;text-decoration:none;cursor:pointer">📁 Thư mục lưu</a>
-    <a id="addProj" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer;margin-right:14px">➕ Thêm dự án</a>
-  </label>
-  <select id="project">
-    <option value="auto">🤖 Tự động theo GPS</option>
-  </select>
-
-  <div id="componentFields" style="display:none">
-    <label>Thông tin cấu kiện (đóng dấu lên ảnh — dự án Cầu ống lồng)</label>
-    <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
-    <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
-    <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+  <div class="tabbar">
+    <button id="tabBtnCapture" class="tab active" onclick="showTab('capture')">📸 Chụp</button>
+    <button id="tabBtnBrowse" class="tab" onclick="showTab('browse')">🔍 Tra cứu</button>
   </div>
 
-  <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-  <button class="btn btn-camera" onclick="openCamera()">📸 MỞ CAMERA — CHỤP LIÊN TỤC</button>
+  <!-- ========== CHẾ ĐỘ CHỤP ========== -->
+  <div id="secCapture">
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet</p>
 
-  <div id="thumbs"></div>
-  <div id="gps"></div>
+    <label>Tên của bạn</label>
+    <input type="text" id="user" placeholder="VD: Thế Mỹ">
 
-  <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)</label>
-  <textarea id="note" rows="2" placeholder="VD: Đã hàn xong dầm trục B"></textarea>
+    <label>Dự án
+      <a id="setFolder" style="float:right;color:#188038;font-weight:600;text-decoration:none;cursor:pointer">📁 Thư mục</a>
+      <a id="addProj" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer;margin-right:14px">➕ Thêm</a>
+    </label>
+    <select id="project"></select>
 
-  <button class="btn btn-send" id="sendBtn" onclick="send()" disabled>☁️ GỬI BÁO CÁO</button>
-  <div id="status"></div>
+    <div id="componentFields" style="display:none">
+      <label>Thông tin cấu kiện (đóng dấu lên ảnh — dự án Cầu ống lồng)</label>
+      <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
+      <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
+      <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+    <button class="btn btn-camera" onclick="openCamera()">📸 MỞ CAMERA — CHỤP LIÊN TỤC</button>
+
+    <div id="thumbs"></div>
+
+    <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)</label>
+    <textarea id="note" rows="2" placeholder="VD: Đã hàn xong dầm trục B"></textarea>
+
+    <button class="btn btn-send" id="sendBtn" onclick="send()" disabled>☁️ GỬI BÁO CÁO</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- ========== CHẾ ĐỘ TRA CỨU ========== -->
+  <div id="secBrowse" style="display:none">
+    <p class="sub">Xem lại & tìm ảnh đã chụp theo dự án</p>
+    <label>Dự án</label>
+    <select id="browseProject" onchange="loadReports()"></select>
+    <label>Tìm kiếm (cấu kiện, người chụp, hạng mục, ghi chú...)</label>
+    <input type="text" id="browseSearch" placeholder="Gõ để lọc..." oninput="renderReports()">
+    <div id="browseInfo" style="font-size:13px;color:#888;margin-top:8px"></div>
+    <div id="browseResults"></div>
+  </div>
 </div>
 
-<!-- Modal chọn thư mục Drive (cho điện thoại, khỏi copy link) -->
+<!-- Modal chọn thư mục -->
 <div id="folderModal" class="modal-bg">
   <div class="modal">
     <h3 id="fmTitle">Chọn thư mục lưu</h3>
@@ -126,7 +154,7 @@
   </div>
 </div>
 
-<!-- Camera chụp liên tục -->
+<!-- Camera -->
 <div id="camOverlay">
   <button id="camClose" onclick="closeCamera()">✕</button>
   <video id="camVideo" autoplay playsinline muted></video>
@@ -145,378 +173,283 @@ const SECRET_KEY = 'FS-themy-2026-xK7mQ9pL';
 const MAX_PHOTOS = 50;
 // ======================
 
-let photos = [];           // base64 (không kèm tiền tố data:)
-let lat = null, lng = null;
+let photos = [];
 let camStream = null;
+let allReports = [];
 const $ = id => document.getElementById(id);
 
+// ===== TAB =====
+function showTab(t) {
+  const cap = t === 'capture';
+  $('secCapture').style.display = cap ? 'block' : 'none';
+  $('secBrowse').style.display = cap ? 'none' : 'block';
+  $('tabBtnCapture').classList.toggle('active', cap);
+  $('tabBtnBrowse').classList.toggle('active', !cap);
+  if (!cap && allReports.length === 0) loadReports();
+}
+
+// ===== Tên người =====
 $('user').value = localStorage.getItem('userName') || '';
 $('user').addEventListener('input', e => localStorage.setItem('userName', e.target.value));
 
-// Nhớ Model / Cổng / Cấu kiện (đặc thù dự án Cầu ống lồng) — gõ 1 lần, giữ cho lần sau
-['model', 'gate', 'unit'].forEach(id => {
+['model','gate','unit'].forEach(id => {
   $(id).value = localStorage.getItem('fs_' + id) || '';
   $(id).addEventListener('input', e => localStorage.setItem('fs_' + id, e.target.value));
 });
 
-// Danh sách dự án từ tab "Dự án" — nhớ dự án đã chọn lần trước (thao tác nhanh)
+// ===== Danh sách dự án (cho cả Chụp & Tra cứu) =====
+function fillProjectSelects(projects) {
+  const saved = localStorage.getItem('lastProject');
+  const opts = projects.map(p => '<option value="' + p.replace(/"/g,'&quot;') + '">' + p + '</option>').join('');
+  $('project').innerHTML = opts || '<option value="">(Chưa có dự án — bấm ➕ Thêm)</option>';
+  $('browseProject').innerHTML = '<option value="' + ALL + '">— Tất cả dự án —</option>' + opts;
+  if (saved && projects.includes(saved)) $('project').value = saved;
+  toggleComponentFields();
+}
+const ALL = '__all__';
+
 fetch(API_URL + '?action=projects')
   .then(r => r.json())
-  .then(data => {
-    if (data.ok && data.projects) {
-      for (const name of data.projects) {
-        const opt = document.createElement('option');
-        opt.value = opt.textContent = name;
-        $('project').appendChild(opt);
-      }
-    }
-    // khôi phục lựa chọn lần trước
-    const saved = localStorage.getItem('lastProject');
-    if (saved && [...$('project').options].some(o => o.value === saved)) {
-      $('project').value = saved;
-    }
-    toggleComponentFields();
-  })
+  .then(d => { if (d.ok) fillProjectSelects(d.projects || []); })
   .catch(() => {});
 
-// Model/Cổng/Cấu kiện chỉ phục vụ dự án Cầu ống lồng → ẩn/hiện theo dự án
-function usesComponentInfo() {
-  return /ống lồng/i.test($('project').value);
-}
-function toggleComponentFields() {
-  $('componentFields').style.display = usesComponentInfo() ? 'block' : 'none';
-}
-
-// lưu + cập nhật hiển thị mỗi khi đổi dự án
 $('project').addEventListener('change', e => {
   localStorage.setItem('lastProject', e.target.value);
   toggleComponentFields();
 });
 
-// 📁 Chọn thư mục Drive bằng cách TÌM + BẤM CHỌN (điện thoại khỏi copy link)
-let folderTargetProject = null;
-$('setFolder').addEventListener('click', () => {
-  const pv = $('project').value;
-  if (pv === 'auto') { alert('Hãy chọn 1 dự án cụ thể trước (không phải "Tự động theo GPS").'); return; }
-  folderTargetProject = pv;
-  $('fmTitle').textContent = '📁 Thư mục lưu cho: ' + pv;
-  $('folderQuery').value = '';
-  $('folderResults').innerHTML = '<p style="color:#888;font-size:13px;margin-top:10px">Gõ tên thư mục rồi bấm Tìm. Để trống → liệt kê thư mục gần đây.</p>';
-  $('folderModal').classList.add('show');
-});
-function closeFolderModal() { $('folderModal').classList.remove('show'); }
-
-async function searchFolders() {
-  const q = $('folderQuery').value.trim();
-  $('folderResults').innerHTML = '⏳ Đang tìm...';
-  try {
-    const res = await fetch(API_URL, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ key: SECRET_KEY, action: 'searchFolders', query: q })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    if (!data.folders.length) { $('folderResults').innerHTML = '<p>Không tìm thấy thư mục nào.</p>'; return; }
-    const esc = s => String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-    $('folderResults').innerHTML = data.folders.map(f =>
-      '<div class="folder-item" onclick="pickFolder(\'' + f.id + '\', this)">' +
-      '<b>📁 ' + esc(f.name) + '</b>' +
-      (f.parent ? '<div class="fp">trong: ' + esc(f.parent) + '</div>' : '') + '</div>'
-    ).join('');
-  } catch (e) { $('folderResults').innerHTML = '❌ ' + e.message; }
+function usesComponentInfo() { return /ống lồng/i.test($('project').value); }
+function toggleComponentFields() {
+  $('componentFields').style.display = usesComponentInfo() ? 'block' : 'none';
 }
 
-async function pickFolder(id, el) {
-  el.style.background = '#e6f4ea';
-  try {
-    const res = await fetch(API_URL, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ key: SECRET_KEY, action: 'setProjectFolder', project: folderTargetProject, folder: id })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    closeFolderModal();
-    alert('✅ Ảnh dự án "' + folderTargetProject + '" sẽ lưu vào:\n📁 ' + data.folderName + ' / <tháng>');
-  } catch (e) { alert('❌ ' + e.message); }
-}
-
-// ➕ Thêm dự án ngay trong app
+// ===== Thêm dự án =====
 $('addProj').addEventListener('click', async () => {
   const name = (prompt('Tên dự án mới:') || '').trim();
   if (!name) return;
-  $('addProj').textContent = '⏳ Đang thêm...';
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ key: SECRET_KEY, action: 'addProject', name })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    // nạp lại danh sách, chọn dự án vừa thêm
-    const sel = $('project');
-    [...sel.querySelectorAll('option:not([value="auto"])')].forEach(o => o.remove());
-    for (const p of data.projects) {
-      const opt = document.createElement('option');
-      opt.value = opt.textContent = p;
-      sel.appendChild(opt);
-    }
-    sel.value = name;
+    const d = await post({ action: 'addProject', name });
+    if (!d.ok) throw new Error(d.error);
+    fillProjectSelects(d.projects);
+    $('project').value = name;
     localStorage.setItem('lastProject', name);
+    toggleComponentFields();
     alert('✅ Đã thêm dự án: ' + name);
-  } catch (e) {
-    alert('❌ Lỗi: ' + e.message);
-  } finally {
-    $('addProj').textContent = '➕ Thêm dự án';
-  }
+  } catch (e) { alert('❌ ' + e.message); }
 });
 
-// ===== CAMERA TRONG TRANG — CHỤP LIÊN TỤC =====
-async function openCamera() {
-  getGps(); // lấy GPS song song ngay khi mở camera
+// ===== Chọn thư mục Drive (tìm + bấm) =====
+let folderTargetProject = null;
+$('setFolder').addEventListener('click', () => {
+  const pv = $('project').value;
+  if (!pv) { alert('Hãy chọn/thêm dự án trước.'); return; }
+  folderTargetProject = pv;
+  $('fmTitle').textContent = '📁 Thư mục lưu cho: ' + pv;
+  $('folderQuery').value = '';
+  $('folderResults').innerHTML = '<p style="color:#888;font-size:13px;margin-top:10px">Gõ tên thư mục rồi bấm Tìm.</p>';
+  $('folderModal').classList.add('show');
+  searchFolders();
+});
+function closeFolderModal() { $('folderModal').classList.remove('show'); }
+async function searchFolders() {
+  $('folderResults').innerHTML = '⏳ Đang tìm...';
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 } },
-      audio: false
-    });
+    const d = await post({ action: 'searchFolders', query: $('folderQuery').value.trim() });
+    if (!d.ok) throw new Error(d.error);
+    if (!d.folders.length) { $('folderResults').innerHTML = '<p>Không tìm thấy thư mục nào.</p>'; return; }
+    const esc = s => String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    $('folderResults').innerHTML = d.folders.map(f =>
+      '<div class="folder-item" onclick="pickFolder(\'' + f.id + '\', this)"><b>📁 ' + esc(f.name) + '</b>' +
+      (f.parent ? '<div class="fp">trong: ' + esc(f.parent) + '</div>' : '') + '</div>').join('');
+  } catch (e) { $('folderResults').innerHTML = '❌ ' + e.message; }
+}
+async function pickFolder(id, el) {
+  el.style.background = '#e6f4ea';
+  try {
+    const d = await post({ action: 'setProjectFolder', project: folderTargetProject, folder: id });
+    if (!d.ok) throw new Error(d.error);
+    closeFolderModal();
+    alert('✅ Ảnh dự án "' + folderTargetProject + '" sẽ lưu vào:\n📁 ' + d.folderName + ' / <tháng> / <ngày>');
+  } catch (e) { alert('❌ ' + e.message); }
+}
+
+// ===== CAMERA =====
+async function openCamera() {
+  if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } }, audio: false });
     $('camVideo').srcObject = camStream;
     $('camOverlay').classList.add('show');
     updateCamCount();
-  } catch (e) {
-    // Không mở được camera (thiếu quyền / trình duyệt cũ) → dùng input thường
-    $('fileInput').click();
-  }
+  } catch (e) { $('fileInput').click(); }
 }
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-// Đóng dấu THẺ THÔNG TIN vào góc dưới phải ảnh (Project / Model / Cổng / Cấu kiện + giờ + GPS)
-function drawStamp(ctx, W, H) {
-  const now = new Date();
-  const p = n => String(n).padStart(2, '0');
-  const time = `${p(now.getDate())}/${p(now.getMonth() + 1)}/${now.getFullYear()} ` +
-               `${p(now.getHours())}:${p(now.getMinutes())}`;
-  const pv = $('project').value;
-  const proj = pv === 'auto' ? 'Tự động theo GPS' : pv;
-  const useC = usesComponentInfo();
-  const model = useC ? ($('model').value || '').trim() : '';
-  const gate  = useC ? ($('gate').value || '').trim() : '';
-  const unit  = useC ? ($('unit').value || '').trim() : '';
-  const user  = ($('user').value || '').trim();
-
-  // [label, value, isTitle]
-  const rows = [['Dự án', proj]];
-  if (model) rows.push(['Model', model]);
-  if (gate)  rows.push(['Cổng', gate]);
-  if (unit)  rows.push(['Cấu kiện', unit, true]);
-  rows.push(['Thời gian', time + (user ? '  •  ' + user : '')]);
-  if (lat !== null) rows.push(['GPS', lat.toFixed(5) + ', ' + lng.toFixed(5)]);
-
-  // Nhỏ gọn + trong suốt: nền mờ nhẹ, chữ có viền đen nên đọc rõ cả trên nền sáng
-  const fs = Math.max(13, Math.round(W * 0.021));
-  const lh = Math.round(fs * 1.35);
-  const titleLh = Math.round(fs * 1.55);
-  const padX = Math.round(fs * 0.7), padY = Math.round(fs * 0.5);
-
-  let maxW = 0;
-  rows.forEach(r => {
-    ctx.font = r[2] ? `bold ${Math.round(fs * 1.2)}px Arial` : `${fs}px Arial`;
-    const txt = r[2] ? r[1] : (r[0] + ': ' + r[1]);
-    maxW = Math.max(maxW, ctx.measureText(txt).width);
-  });
-  const cardW = Math.min(W - fs, maxW + padX * 2);
-  let cardH = padY * 2;
-  rows.forEach(r => cardH += r[2] ? titleLh : lh);
-
-  const x = W - cardW - Math.round(fs * 0.5);
-  const y = H - cardH - Math.round(fs * 0.5);
-
-  // nền RẤT mờ (nhìn xuyên thấy ảnh phía sau)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-  roundRect(ctx, x, y, cardW, cardH, Math.round(fs * 0.35));
-  ctx.fill();
-
-  // chữ trắng + viền đen mảnh → đọc rõ trên mọi nền mà không cần che ảnh
-  ctx.textBaseline = 'top';
-  ctx.lineJoin = 'round';
-  const drawText = (txt, tx, ty, bold) => {
-    ctx.font = `${bold ? 'bold ' : ''}${bold ? Math.round(fs * 1.2) : fs}px Arial`;
-    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    ctx.lineWidth = Math.max(2, Math.round(fs * 0.16));
-    ctx.strokeText(txt, tx, ty);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(txt, tx, ty);
-  };
-  let cy = y + padY;
-  rows.forEach(r => {
-    if (r[2]) {
-      drawText(r[1], x + padX, cy, true);
-      cy += titleLh;
-    } else {
-      drawText(r[0] + ': ' + r[1], x + padX, cy, false);
-      cy += lh;
-    }
-  });
-}
-
 function snap() {
   if (photos.length >= MAX_PHOTOS) { alert('Tối đa ' + MAX_PHOTOS + ' ảnh/báo cáo'); return; }
   const video = $('camVideo');
   const vw = video.videoWidth, vh = video.videoHeight;
   const scale = Math.min(1, 1280 / Math.max(vw, vh));
   const w = Math.round(vw * scale), h = Math.round(vh * scale);
-
-  // Ảnh từ camera trong trang KHÔNG có dữ liệu xoay EXIF → tự xoay cho ĐÚNG hướng cầm máy:
-  // cầm dọc → ảnh dọc, cầm ngang → ảnh ngang. Chiều xoay xác định theo góc màn hình.
   const portrait = window.matchMedia('(orientation: portrait)').matches;
   const frameLandscape = w > h;
-  const needRotate = portrait !== frameLandscape;   // hướng khung ảnh chưa khớp hướng máy
-  let angle = 0;
-  try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
-  const clockwise = (angle === 180 || angle === 270); // xoay thuận/ngược tùy chiều cầm
-
+  const needRotate = portrait !== frameLandscape;
+  let angle = 0; try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
+  const clockwise = (angle === 180 || angle === 270);
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (needRotate) {
-    canvas.width = h; canvas.height = w;       // hoán đổi cạnh
+    canvas.width = h; canvas.height = w;
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate(clockwise ? Math.PI / 2 : -Math.PI / 2);
     ctx.drawImage(video, -w / 2, -h / 2, w, h);
-  } else {
-    canvas.width = w; canvas.height = h;
-    ctx.drawImage(video, 0, 0, w, h);
-  }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);          // reset trước khi đóng dấu
-  drawStamp(ctx, canvas.width, canvas.height); // đóng dấu thời gian + dự án + GPS
+  } else { canvas.width = w; canvas.height = h; ctx.drawImage(video, 0, 0, w, h); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawStamp(ctx, canvas.width, canvas.height);
   photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
-
-  // hiệu ứng nháy + rung nhẹ
-  $('flash').style.opacity = '0.7';
-  setTimeout(() => $('flash').style.opacity = '0', 120);
+  $('flash').style.opacity = '0.7'; setTimeout(() => $('flash').style.opacity = '0', 120);
   if (navigator.vibrate) navigator.vibrate(40);
-
-  updateCamCount();
-  renderThumbs();
+  updateCamCount(); renderThumbs();
 }
-
-function closeCamera() {
-  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
-  $('camOverlay').classList.remove('show');
-}
-
-// Lười tối đa: bấm "GỬI ✓" trong camera là đóng + gửi luôn (không quay về form)
-function sendFromCamera() {
-  if (photos.length === 0) { closeCamera(); return; }
-  closeCamera();
-  send();
-}
-
+function closeCamera() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } $('camOverlay').classList.remove('show'); }
+function sendFromCamera() { if (photos.length === 0) { closeCamera(); return; } closeCamera(); send(); }
 function updateCamCount() {
   $('camCount').textContent = photos.length + ' ảnh';
   $('sendBtn').disabled = photos.length === 0;
-  $('sendBtn').textContent = photos.length
-    ? '☁️ GỬI BÁO CÁO (' + photos.length + ' ảnh)' : '☁️ GỬI BÁO CÁO';
+  $('sendBtn').textContent = photos.length ? '☁️ GỬI BÁO CÁO (' + photos.length + ' ảnh)' : '☁️ GỬI BÁO CÁO';
 }
-
-// Fallback: chụp qua input file (mỗi lần 1 ảnh, vẫn cộng dồn)
 $('fileInput').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  // tôn trọng hướng xoay EXIF của ảnh gốc
-  let img;
-  try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
-  catch (_) { img = await createImageBitmap(file); }
+  const file = e.target.files[0]; if (!file) return;
+  let img; try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (_) { img = await createImageBitmap(file); }
   const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
   const canvas = document.createElement('canvas');
-  canvas.width = img.width * scale;
-  canvas.height = img.height * scale;
-  const fctx = canvas.getContext('2d');
-  fctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  drawStamp(fctx, canvas.width, canvas.height);
+  canvas.width = img.width * scale; canvas.height = img.height * scale;
+  const c = canvas.getContext('2d');
+  c.drawImage(img, 0, 0, canvas.width, canvas.height);
+  drawStamp(c, canvas.width, canvas.height);
   photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
-  e.target.value = '';
-  updateCamCount();
-  renderThumbs();
+  e.target.value = ''; updateCamCount(); renderThumbs();
 });
-
 function renderThumbs() {
   $('thumbs').innerHTML = photos.map((b64, i) =>
-    '<div class="thumb"><img src="data:image/jpeg;base64,' + b64 + '">' +
-    '<button class="del" onclick="removePhoto(' + i + ')">✕</button></div>'
-  ).join('');
+    '<div class="thumb"><img src="data:image/jpeg;base64,' + b64 + '"><button class="del" onclick="removePhoto(' + i + ')">✕</button></div>').join('');
+}
+function removePhoto(i) { photos.splice(i, 1); updateCamCount(); renderThumbs(); }
+
+// ===== ĐÓNG DẤU (không còn GPS) =====
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function drawStamp(ctx, W, H) {
+  const now = new Date(), p = n => String(n).padStart(2, '0');
+  const time = `${p(now.getDate())}/${p(now.getMonth() + 1)}/${now.getFullYear()} ${p(now.getHours())}:${p(now.getMinutes())}`;
+  const proj = $('project').value || '';
+  const useC = usesComponentInfo();
+  const model = useC ? ($('model').value || '').trim() : '';
+  const gate  = useC ? ($('gate').value || '').trim() : '';
+  const unit  = useC ? ($('unit').value || '').trim() : '';
+  const user  = ($('user').value || '').trim();
+  const rows = [];
+  if (proj) rows.push(['Dự án', proj]);
+  if (model) rows.push(['Model', model]);
+  if (gate)  rows.push(['Cổng', gate]);
+  if (unit)  rows.push(['Cấu kiện', unit, true]);
+  rows.push(['Thời gian', time + (user ? '  •  ' + user : '')]);
+
+  const fs = Math.max(13, Math.round(W * 0.021));
+  const lh = Math.round(fs * 1.35), titleLh = Math.round(fs * 1.55);
+  const padX = Math.round(fs * 0.7), padY = Math.round(fs * 0.5);
+  let maxW = 0;
+  rows.forEach(r => { ctx.font = r[2] ? `bold ${Math.round(fs*1.2)}px Arial` : `${fs}px Arial`;
+    maxW = Math.max(maxW, ctx.measureText(r[2] ? r[1] : (r[0]+': '+r[1])).width); });
+  const cardW = Math.min(W - fs, maxW + padX * 2);
+  let cardH = padY * 2; rows.forEach(r => cardH += r[2] ? titleLh : lh);
+  const x = W - cardW - Math.round(fs * 0.5), y = H - cardH - Math.round(fs * 0.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; roundRect(ctx, x, y, cardW, cardH, Math.round(fs*0.35)); ctx.fill();
+  ctx.textBaseline = 'top'; ctx.lineJoin = 'round';
+  const dt = (txt, tx, ty, bold) => {
+    ctx.font = `${bold?'bold ':''}${bold?Math.round(fs*1.2):fs}px Arial`;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = Math.max(2, Math.round(fs*0.16)); ctx.strokeText(txt, tx, ty);
+    ctx.fillStyle = '#fff'; ctx.fillText(txt, tx, ty);
+  };
+  let cy = y + padY;
+  rows.forEach(r => { if (r[2]) { dt(r[1], x+padX, cy, true); cy += titleLh; }
+    else { dt(r[0]+': '+r[1], x+padX, cy, false); cy += lh; } });
 }
 
-function removePhoto(i) {
-  photos.splice(i, 1);
-  updateCamCount();
-  renderThumbs();
-}
-
-function getGps() {
-  if (lat !== null) return;
-  $('gps').textContent = '📍 Đang lấy vị trí...';
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      lat = pos.coords.latitude; lng = pos.coords.longitude;
-      $('gps').textContent = `📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    },
-    () => $('gps').textContent = '📍 Không lấy được vị trí (vẫn gửi được)',
-    { timeout: 10000 }
-  );
-}
-
-// ===== GỬI 1 LẦN CHO CẢ CHÙM ẢNH =====
+// ===== GỬI =====
 async function send() {
+  if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
   const btn = $('sendBtn'), st = $('status');
-  btn.disabled = true;
-  st.className = 'info';
-  st.textContent = '⏳ Đang gửi ' + photos.length + ' ảnh...';
-
+  btn.disabled = true; st.className = 'info'; st.textContent = '⏳ Đang gửi ' + photos.length + ' ảnh...';
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' }, // né CORS preflight với Apps Script
-      body: JSON.stringify({
-        key: SECRET_KEY,
-        reportId: crypto.randomUUID(),
-        images: photos,
-        lat, lng,
-        note: $('note').value.trim(),
-        user: $('user').value.trim(),
-        project: $('project').value,
-        model: usesComponentInfo() ? $('model').value.trim() : '',
-        gate: usesComponentInfo() ? $('gate').value.trim() : '',
-        unit: usesComponentInfo() ? $('unit').value.trim() : '',
-        ocrText: '',
-        entities: []
-      })
+    const d = await post({
+      reportId: crypto.randomUUID(), images: photos,
+      note: $('note').value.trim(), user: $('user').value.trim(), project: $('project').value,
+      model: usesComponentInfo() ? $('model').value.trim() : '',
+      gate: usesComponentInfo() ? $('gate').value.trim() : '',
+      unit: usesComponentInfo() ? $('unit').value.trim() : '',
+      ocrText: '', entities: []
     });
-    const data = await res.json();
-    if (data.ok) {
-      st.className = 'ok';
-      let html = '✅ Đã lưu báo cáo (' + (data.photoCount || photos.length) + ' ảnh)!' +
-                 '<br>📁 Dự án: <b>' + (data.project || '?') + '</b>';
-      if (data.aiPending) html += '<br>🤖 AI đang phân tích nền — kết quả tự cập nhật vào Sheet sau ~1 phút.';
-      if (data.imageUrl) html += '<br><a href="' + data.imageUrl + '" target="_blank">Xem ảnh trên Drive</a>';
-      st.innerHTML = html;
-      photos = []; $('note').value = '';
-      renderThumbs(); updateCamCount();
-    } else {
-      throw new Error(data.error);
-    }
-  } catch (err) {
-    st.className = 'err';
-    st.textContent = '❌ Lỗi: ' + err.message;
-    btn.disabled = false;
-  }
+    if (!d.ok) throw new Error(d.error);
+    st.className = 'ok';
+    let html = '✅ Đã lưu báo cáo (' + (d.photoCount || photos.length) + ' ảnh)!<br>📁 Dự án: <b>' + (d.project || '?') + '</b>';
+    if (d.aiPending) html += '<br>🤖 AI đang phân tích nền — xem ở tab Tra cứu sau ~1 phút.';
+    st.innerHTML = html;
+    photos = []; $('note').value = ''; renderThumbs(); updateCamCount();
+    allReports = []; // làm mới tra cứu lần sau
+  } catch (e) { st.className = 'err'; st.textContent = '❌ Lỗi: ' + e.message; btn.disabled = false; }
+}
+
+// ===== TRA CỨU =====
+async function loadReports() {
+  $('browseResults').innerHTML = '';
+  $('browseInfo').textContent = '⏳ Đang tải...';
+  try {
+    const d = await post({ action: 'listReports', project: $('browseProject').value });
+    if (!d.ok) throw new Error(d.error);
+    allReports = d.reports || [];
+    renderReports();
+  } catch (e) { $('browseInfo').textContent = '❌ ' + e.message; }
+}
+function thumbUrl(url) {
+  const m = String(url).match(/[-\w]{25,}/);
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[0] + '&sz=w200' : '';
+}
+function fmtTime(t) {
+  const d = new Date(t); if (isNaN(d)) return t;
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function renderReports() {
+  const q = $('browseSearch').value.trim().toLowerCase();
+  const list = allReports.filter(r => !q ||
+    [r.time, r.project, r.category, r.description, r.note, r.user, r.model, r.gate, r.unit]
+    .join(' ').toLowerCase().includes(q));
+  $('browseInfo').textContent = list.length + ' báo cáo' + (q ? ' (lọc)' : '');
+  const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+  $('browseResults').innerHTML = list.map(r => {
+    const title = r.unit || r.category || '(chưa phân loại)';
+    const tags = [r.model, r.gate].filter(Boolean).map(t => '<span class="chip">' + esc(t) + '</span>').join('');
+    const imgs = (r.images || []).map(u =>
+      '<a href="' + u + '" target="_blank"><img loading="lazy" src="' + thumbUrl(u) + '"></a>').join('');
+    return '<div class="report">' +
+      '<div class="title">' + esc(title) + '</div>' +
+      '<div class="meta">🕒 ' + esc(fmtTime(r.time)) + (r.user ? ' • 👤 ' + esc(r.user) : '') +
+        ' • 📁 ' + esc(r.project) + '</div>' +
+      (tags ? '<div style="margin-top:4px">' + tags + (r.category ? '<span class="chip" style="background:#fff3e0;color:#e65100">' + esc(r.category) + '</span>' : '') + '</div>' : '') +
+      (r.description ? '<div class="desc">🤖 ' + esc(r.description) + '</div>' : '') +
+      (r.issues ? '<div class="warn">⚠️ ' + esc(r.issues).replace(/\n/g,'<br>') + '</div>' : '') +
+      (r.note ? '<div class="desc">📝 ' + esc(r.note) + '</div>' : '') +
+      (imgs ? '<div class="imgs">' + imgs + '</div>' : '') +
+    '</div>';
+  }).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
+}
+
+// ===== Helper POST =====
+async function post(body) {
+  const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(Object.assign({ key: SECRET_KEY }, body)) });
+  return res.json();
 }
 </script>
 </body>
