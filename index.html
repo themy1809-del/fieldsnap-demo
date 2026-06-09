@@ -100,6 +100,7 @@
     <button id="tabBtnManage" class="tab" onclick="showTab('manage')">📊 Quản lý</button>
   </div>
   <div id="whoami" style="font-size:12px;color:#888;margin-bottom:6px"></div>
+  <div id="pendingBanner" style="display:none;background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px"></div>
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
@@ -463,29 +464,37 @@ function drawStamp(ctx, W, H) {
     else { dt(r[0]+': '+r[1], x+padX, cy, false); cy += lh; } });
 }
 
-// ===== GỬI =====
+// ===== GỬI (lưu vào máy trước → không mất ảnh khi mất mạng) =====
 async function send() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
-  const btn = $('sendBtn'), st = $('status');
-  btn.disabled = true; st.className = 'info'; st.textContent = '⏳ Đang gửi ' + photos.length + ' ảnh...';
+  if (photos.length === 0) { alert('Chưa có ảnh nào để gửi.'); return; }
+  const st = $('status');
+  const payload = {
+    reportId: (crypto.randomUUID ? crypto.randomUUID() : 'r-' + Date.now() + '-' + Math.random().toString(36).slice(2)),
+    images: photos.slice(),
+    note: $('note').value.trim(), user: $('user').value.trim(), deviceId: DEVICE_ID,
+    project: $('project').value, category: $('category').value,
+    model: usesComponentInfo() ? $('model').value.trim() : '',
+    gate: usesComponentInfo() ? $('gate').value.trim() : '',
+    unit: usesComponentInfo() ? $('unit').value.trim() : '',
+    ocrText: '', entities: []
+  };
+  const count = photos.length;
+  // 1) Lưu an toàn vào máy TRƯỚC (IndexedDB) — tắt app/mất mạng vẫn còn
   try {
-    const d = await post({
-      reportId: crypto.randomUUID(), images: photos,
-      note: $('note').value.trim(), user: $('user').value.trim(), deviceId: DEVICE_ID,
-      project: $('project').value, category: $('category').value,
-      model: usesComponentInfo() ? $('model').value.trim() : '',
-      gate: usesComponentInfo() ? $('gate').value.trim() : '',
-      unit: usesComponentInfo() ? $('unit').value.trim() : '',
-      ocrText: '', entities: []
-    });
-    if (!d.ok) throw new Error(d.error);
-    st.className = 'ok';
-    let html = '✅ Đã lưu báo cáo (' + (d.photoCount || photos.length) + ' ảnh)!<br>📁 Dự án: <b>' + (d.project || '?') + '</b>';
-    if (d.aiPending) html += '<br>🤖 AI đang phân tích nền — xem ở tab Tra cứu sau ~1 phút.';
-    st.innerHTML = html;
-    photos = []; $('note').value = ''; renderThumbs(); updateCamCount();
-    allReports = []; // làm mới tra cứu lần sau
-  } catch (e) { st.className = 'err'; st.textContent = '❌ Lỗi: ' + e.message; btn.disabled = false; }
+    await oxPut({ reportId: payload.reportId, payload, count, project: payload.project, ts: Date.now() });
+  } catch (e) {
+    st.className = 'err';
+    st.textContent = '❌ Không lưu được vào bộ nhớ máy: ' + e.message + '. Đừng tắt app, hãy bấm Gửi lại.';
+    return;
+  }
+  // 2) Đã an toàn → dọn khung chụp để chụp tiếp ngay
+  photos = []; $('note').value = ''; renderThumbs(); updateCamCount();
+  allReports = []; // làm mới tra cứu lần sau
+  st.className = 'info';
+  st.innerHTML = '✅ Đã lưu <b>' + count + ' ảnh</b> vào máy an toàn. ☁️ Đang gửi lên...';
+  // 3) Gửi (và tự gửi lại nếu lỗi)
+  flushOutbox(true);
 }
 
 // ===== TRA CỨU =====
@@ -610,12 +619,81 @@ async function askAI() {
   } catch (e) { $('askAnswer').className = 'err'; $('askAnswer').textContent = '❌ ' + e.message; }
 }
 
-// ===== Helper POST =====
+// ===== Helper POST (có giới hạn thời gian chờ) =====
 async function post(body) {
-  const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(Object.assign({ key: SECRET_KEY }, body)) });
-  return res.json();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000); // 90s cho gói nhiều ảnh
+  try {
+    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(Object.assign({ key: SECRET_KEY }, body)), signal: ctrl.signal });
+    return res.json();
+  } finally { clearTimeout(timer); }
 }
+
+// ===== HỘP CHỜ GỬI (Outbox - chống mất ảnh khi mất mạng/lỗi) =====
+let _dbP = null;
+function odb() {
+  if (_dbP) return _dbP;
+  _dbP = new Promise((res, rej) => {
+    const r = indexedDB.open('fieldsnap', 1);
+    r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('outbox')) r.result.createObjectStore('outbox', { keyPath: 'reportId' }); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error('IndexedDB lỗi'));
+  });
+  return _dbP;
+}
+function oxPut(rec) { return odb().then(db => new Promise((res, rej) => { const tx = db.transaction('outbox', 'readwrite'); tx.objectStore('outbox').put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error); })); }
+function oxDel(id)  { return odb().then(db => new Promise((res, rej) => { const tx = db.transaction('outbox', 'readwrite'); tx.objectStore('outbox').delete(id); tx.oncomplete = res; tx.onerror = () => rej(tx.error); })); }
+function oxAll()    { return odb().then(db => new Promise((res, rej) => { const tx = db.transaction('outbox', 'readonly'); const q = tx.objectStore('outbox').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); })); }
+
+function updatePending(n) {
+  const b = $('pendingBanner'); if (!b) return;
+  if (n > 0) {
+    b.style.display = 'block';
+    b.innerHTML = '⏳ <b>' + n + '</b> báo cáo đang chờ gửi — đã lưu an toàn trong máy. ' +
+      '<a onclick="flushOutbox(true)" style="color:#1a73e8;cursor:pointer;font-weight:700;text-decoration:underline">Gửi lại ngay</a>';
+  } else { b.style.display = 'none'; b.innerHTML = ''; }
+}
+
+let _flushing = false;
+async function flushOutbox(manual) {
+  if (_flushing) return; _flushing = true;
+  const st = $('status');
+  try {
+    let items = [];
+    try { items = await oxAll(); } catch (e) { return; }
+    updatePending(items.length);
+    if (items.length === 0) return;
+    if (!navigator.onLine) {
+      if (st && manual) { st.className = 'info'; st.innerHTML = '📴 Chưa có mạng — <b>' + items.length + '</b> báo cáo đã lưu trong máy, sẽ <b>tự gửi lại</b> khi có mạng.'; }
+      return;
+    }
+    let sent = 0;
+    for (const rec of items) {
+      try {
+        const d = await post(rec.payload);
+        if (!d || !d.ok) throw new Error((d && d.error) || 'máy chủ');
+        await oxDel(rec.reportId); sent++;
+        updatePending((await oxAll()).length);
+      } catch (e) { /* để lại trong outbox, thử lại lần sau */ }
+    }
+    const left = (await oxAll()).length;
+    updatePending(left);
+    if (st) {
+      if (left === 0 && sent > 0) {
+        st.className = 'ok';
+        st.innerHTML = '✅ Đã gửi xong <b>' + sent + '</b> báo cáo! 🤖 AI đang phân tích nền — xem ở tab Tra cứu sau ~1 phút.';
+      } else if (left > 0) {
+        st.className = 'err';
+        st.innerHTML = '⚠️ Mạng yếu/lỗi, còn <b>' + left + '</b> báo cáo chưa gửi. Ảnh vẫn an toàn trong máy — hệ thống sẽ <b>tự thử lại</b> (hoặc bấm “Gửi lại ngay”).';
+      }
+    }
+  } finally { _flushing = false; }
+}
+
+// Tự gửi lại khi có mạng trở lại + khi mở app (gửi nốt báo cáo còn tồn)
+window.addEventListener('online', () => flushOutbox());
+flushOutbox();
 </script>
 </body>
 </html>
