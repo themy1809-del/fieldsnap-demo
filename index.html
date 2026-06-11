@@ -104,7 +104,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V19</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V20</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -335,8 +335,17 @@ function fillCategories() {
     cats.map(c => '<option value="' + c.replace(/"/g,'&quot;') + '">' + c + '</option>').join('');
 }
 
+// V20: nhớ danh sách dự án trong máy — mở app KHÔNG MẠNG vẫn chọn được dự án để chụp
+try {
+  const pc = JSON.parse(localStorage.getItem('projCache') || 'null');
+  if (pc && pc.length) fillProjectSelects(pc);
+} catch (e) {}
 post({ action: 'projectsFull' })
-  .then(d => { if (d.ok) fillProjectSelects(d.projects || []); })
+  .then(d => {
+    if (!d.ok) return;
+    fillProjectSelects(d.projects || []);
+    try { localStorage.setItem('projCache', JSON.stringify(d.projects || [])); } catch (e) {}
+  })
   .catch(() => {});
 
 $('project').addEventListener('change', e => {
@@ -823,6 +832,29 @@ try { if (navigator.storage && navigator.storage.persist) navigator.storage.pers
 // Tự gửi lại khi có mạng trở lại + khi mở app (gửi nốt báo cáo còn tồn)
 window.addEventListener('online', () => flushOutbox());
 flushOutbox();
+// ===== V20: SERVICE WORKER — mở app không cần mạng + tự báo khi có bản mới =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner();
+      });
+    });
+  }).catch(() => {});
+}
+function showUpdateBanner() {
+  if (document.getElementById('updBanner')) return;
+  const d = document.createElement('div');
+  d.id = 'updBanner';
+  d.style.cssText = 'background:#e8f0fe;border:1px solid #1a73e8;color:#1a73e8;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px;cursor:pointer;font-weight:600';
+  d.textContent = '🔄 Có phiên bản mới — bấm vào đây để cập nhật';
+  d.onclick = () => location.reload();
+  const card = document.querySelector('.card');
+  card.insertBefore(d, card.children[1]);
+}
+
 // V18: khôi phục ảnh chụp dở (đã lưu nháp) nếu lần trước tắt app khi chưa bấm Gửi
 dfGet().then(rec => {
   if (rec && rec.photos && rec.photos.length && photos.length === 0) {
