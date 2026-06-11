@@ -104,7 +104,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V25</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V26</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -709,14 +709,26 @@ function fmtTime(t) {
   const p = n => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-function reportCardHTML(r) {
+function reportCardHTML(r, mng) {
   const esc = s => String(s||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
   const title = r.unit || r.category || '(chưa phân loại)';
   const tags = [r.model, r.gate].filter(Boolean).map(t => '<span class="chip">' + esc(t) + '</span>').join('');
   const imgs = (r.images || []).map(u =>
     '<a href="' + u + '" target="_blank"><img loading="lazy" src="' + thumbUrl(u) + '"></a>').join('');
+  // V26: nhãn trạng thái duyệt + nút duyệt (chỉ trong tab Quản lý)
+  const review = r.review || '';
+  const reviewChip = review
+    ? (review === 'Đạt'
+      ? ' <span class="chip" style="background:#e6f4ea;color:#188038">✅ Đạt</span>'
+      : ' <span class="chip" style="background:#fce8e6;color:#c5221f">🔁 ' + esc(review) + '</span>')
+    : '';
+  const btns = (mng === true && r.reportId)
+    ? '<div style="margin-top:8px;display:flex;gap:6px">' +
+      '<button onclick="reviewRpt(\'' + esc(r.reportId) + '\',1)" style="flex:1;padding:7px;border:1px solid #188038;background:#fff;color:#188038;border-radius:8px;font-weight:600;cursor:pointer">✅ Đạt</button>' +
+      '<button onclick="reviewRpt(\'' + esc(r.reportId) + '\',0)" style="flex:1;padding:7px;border:1px solid #c5221f;background:#fff;color:#c5221f;border-radius:8px;font-weight:600;cursor:pointer">🔁 Chụp lại</button></div>'
+    : '';
   return '<div class="report">' +
-    '<div class="title">' + esc(title) + '</div>' +
+    '<div class="title">' + esc(title) + reviewChip + '</div>' +
     '<div class="meta">🕒 ' + esc(fmtTime(r.time)) + (r.user ? ' • 👤 ' + esc(r.user) : '') +
       ' • 📁 ' + esc(r.project) + '</div>' +
     (tags ? '<div style="margin-top:4px">' + tags + (r.category ? '<span class="chip" style="background:#fff3e0;color:#e65100">' + esc(r.category) + '</span>' : '') + '</div>' : '') +
@@ -724,7 +736,28 @@ function reportCardHTML(r) {
     (r.issues ? '<div class="warn">⚠️ ' + esc(r.issues).replace(/\n/g,'<br>') + '</div>' : '') +
     (r.note ? '<div class="desc">📝 ' + esc(r.note) + '</div>' : '') +
     (imgs ? '<div class="imgs">' + imgs + '</div>' : '') +
+    btns +
   '</div>';
+}
+
+// V26: Sếp duyệt báo cáo — Đạt hoặc Chụp lại (kèm lý do, tự báo Telegram cho đội)
+async function reviewRpt(id, ok) {
+  let reason = '';
+  if (!ok) {
+    reason = (prompt('Lý do yêu cầu chụp lại:') || '').trim();
+    if (!reason) return;
+  }
+  try {
+    const d = await post({
+      action: 'reviewReport', reportId: id,
+      verdict: ok ? 'ok' : 'redo', reason,
+      pin: (localStorage.getItem('managerPin') || '').trim()
+    });
+    if (!d.ok) throw new Error(d.error);
+    alert(ok ? '✅ Đã duyệt: Đạt' : '🔁 Đã yêu cầu chụp lại — Telegram đã báo cho đội.');
+    manageReports = []; allReports = [];
+    loadManage();
+  } catch (e) { alert('❌ ' + e.message); }
 }
 function renderReports() {
   const q = $('browseSearch').value.trim().toLowerCase();
@@ -732,7 +765,7 @@ function renderReports() {
     [r.time, r.project, r.category, r.description, r.note, r.user, r.model, r.gate, r.unit]
     .join(' ').toLowerCase().includes(q));
   $('browseInfo').textContent = list.length + ' báo cáo' + (q ? ' (lọc)' : '');
-  $('browseResults').innerHTML = list.map(reportCardHTML).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
+  $('browseResults').innerHTML = list.map(r => reportCardHTML(r)).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
 }
 
 // ===== QUẢN LÝ (cho sếp) =====
@@ -813,7 +846,7 @@ function toggleMU(i) {
   const key = _muKeys[i], body = $('muBody' + i), ch = $('muCh' + i); if (!body) return;
   if (body.style.display === 'none') {
     const rs = manageReports.filter(r => inRange(r.time) && (r.user || '(không tên)') === key).sort(_mSort);
-    body.innerHTML = rs.map(reportCardHTML).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
+    body.innerHTML = rs.map(r => reportCardHTML(r, true)).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
     body.style.display = 'block'; if (ch) ch.textContent = '▾';
   } else { body.style.display = 'none'; if (ch) ch.textContent = '▸'; }
 }
@@ -821,7 +854,7 @@ function toggleMP(i) {
   const key = _mpKeys[i], body = $('mpBody' + i), ch = $('mpCh' + i); if (!body) return;
   if (body.style.display === 'none') {
     const rs = manageReports.filter(r => inRange(r.time) && (r.project || '(chưa rõ)') === key).sort(_mSort);
-    body.innerHTML = rs.map(reportCardHTML).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
+    body.innerHTML = rs.map(r => reportCardHTML(r, true)).join('') || '<p style="color:#888;padding:6px">Không có báo cáo.</p>';
     body.style.display = 'block'; if (ch) ch.textContent = '▾';
   } else { body.style.display = 'none'; if (ch) ch.textContent = '▸'; }
 }
