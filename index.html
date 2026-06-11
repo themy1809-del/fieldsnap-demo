@@ -104,7 +104,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V24</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V25</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -513,8 +513,26 @@ async function pickFolder(id, el) {
 }
 
 // ===== CAMERA =====
+// V25: đọc CẢM BIẾN để biết máy đang cầm ngang hay dọc THẬT — đúng cả khi KHÓA XOAY màn hình.
+let _tilt = { beta: null, gamma: null };
+window.addEventListener('deviceorientation', e => {
+  if (e.beta !== null) { _tilt.beta = e.beta; _tilt.gamma = e.gamma; }
+});
+function physicalAngle() {
+  const b = _tilt.beta, g = _tilt.gamma;
+  if (b === null || g === null) return null;          // không có cảm biến
+  if (Math.abs(g) > 55) return g > 0 ? 90 : 270;      // cầm NGANG (trái/phải)
+  if (Math.abs(b) > 35 && Math.abs(b) < 145) return 0; // cầm ĐỨNG
+  return null;                                         // nằm phẳng/bất định
+}
+
 async function openCamera() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
+  // V25: iPhone cần xin quyền cảm biến hướng máy (phải gọi trong thao tác bấm)
+  try {
+    if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission)
+      DeviceOrientationEvent.requestPermission().catch(() => {});
+  } catch (e) {}
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } }, audio: false });
     $('camVideo').srcObject = camStream;
@@ -528,17 +546,28 @@ function snap() {
   const vw = video.videoWidth, vh = video.videoHeight;
   const scale = Math.min(1, 1280 / Math.max(vw, vh));
   const w = Math.round(vw * scale), h = Math.round(vh * scale);
-  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  // V25: quyết định xoay theo hướng cầm máy THẬT (cảm biến) — chụp ngang ra ảnh ngang,
+  // chụp đứng ra ảnh đứng, kể cả khi màn hình bị KHÓA XOAY.
   const frameLandscape = w > h;
-  const needRotate = portrait !== frameLandscape;
-  let angle = 0; try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
-  const clockwise = (angle === 180 || angle === 270);
+  const phys = physicalAngle();
+  let rot = 0;  // độ xoay ảnh (+90 = kim đồng hồ)
+  if (phys === null) {
+    // không có cảm biến → cách cũ: theo hướng màn hình
+    const portrait = window.matchMedia('(orientation: portrait)').matches;
+    const needRotate = portrait !== frameLandscape;
+    let angle = 0; try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
+    if (needRotate) rot = (angle === 180 || angle === 270) ? 90 : -90;
+  } else if (phys === 0) {
+    if (frameLandscape) rot = -90;             // cầm đứng, khung ngang → dựng dọc
+  } else {
+    if (!frameLandscape) rot = (phys === 90) ? 90 : -90;  // cầm ngang, khung dọc → xoay ngang
+  }
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  if (needRotate) {
+  if (rot !== 0) {
     canvas.width = h; canvas.height = w;
     ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(clockwise ? Math.PI / 2 : -Math.PI / 2);
+    ctx.rotate(rot * Math.PI / 180);
     ctx.drawImage(video, -w / 2, -h / 2, w, h);
   } else { canvas.width = w; canvas.height = h; ctx.drawImage(video, 0, 0, w, h); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);

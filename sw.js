@@ -2,7 +2,7 @@
 // Mục tiêu: mở app KHÔNG CẦN MẠNG (cache app shell) + luôn lấy bản mới khi có mạng (network-first).
 // API backend là POST (không cache) — outbox trong app đã lo phần gửi lại.
 
-const CACHE = 'fieldsnap-v24';
+const CACHE = 'fieldsnap-v25';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
