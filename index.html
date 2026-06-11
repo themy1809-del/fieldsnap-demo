@@ -104,7 +104,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V26</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V28</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -137,7 +137,9 @@
 
     <div id="thumbs"></div>
 
-    <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)</label>
+    <label>Ghi chú (tùy chọn — AI sẽ tự mô tả ảnh)
+      <a id="micBtn" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer">🎤 Nói</a>
+    </label>
     <textarea id="note" rows="2" placeholder="VD: Đã hàn xong dầm trục B"></textarea>
 
     <button class="btn btn-send" id="sendBtn" onclick="send()" disabled>☁️ GỬI BÁO CÁO</button>
@@ -219,8 +221,25 @@
 
 <script>
 // ====== CẤU HÌNH ======
-const API_URL = 'https://script.google.com/macros/s/AKfycbw9Ht0t2ooozM7i6-GZbrB_bXmZmIjDAueD4wTu6byOiXojbuF66jLOYgB5obwQJZLh/exec';
-const SECRET_KEY = 'FS-themy-2026-xK7mQ9pL';
+// V27: ĐA CÔNG TY — mặc định dùng backend gốc; nhập "mã kết nối" là app trỏ về công ty đó.
+const DEFAULT_API = 'https://script.google.com/macros/s/AKfycbw9Ht0t2ooozM7i6-GZbrB_bXmZmIjDAueD4wTu6byOiXojbuF66jLOYgB5obwQJZLh/exec';
+const DEFAULT_KEY = 'FS-themy-2026-xK7mQ9pL';
+// Mở link ?join=<mã> → tự cấu hình công ty rồi nạp lại app
+try {
+  const jp = new URLSearchParams(location.search).get('join');
+  if (jp) {
+    const cfg = JSON.parse(atob(jp.replace(/-/g, '+').replace(/_/g, '/')));
+    if (cfg.u && cfg.k && confirm('Kết nối app vào: ' + (cfg.n || 'công ty mới') + ' ?')) {
+      localStorage.setItem('coAPI', cfg.u);
+      localStorage.setItem('coKEY', cfg.k);
+      if (cfg.n) localStorage.setItem('coName', cfg.n); else localStorage.removeItem('coName');
+      ['projCache', 'lastProject', 'managerPin', 'ckDone', 'userName'].forEach(k => localStorage.removeItem(k));
+      location.href = location.pathname;
+    }
+  }
+} catch (e) {}
+const API_URL = localStorage.getItem('coAPI') || DEFAULT_API;
+const SECRET_KEY = localStorage.getItem('coKEY') || DEFAULT_KEY;
 const MAX_PHOTOS = 50;
 // ======================
 
@@ -272,9 +291,34 @@ const DEVICE_ID = localStorage.getItem('deviceId');
 
 function updateWhoami() {
   const n = localStorage.getItem('userName') || '';
-  $('whoami').innerHTML = n
-    ? '👤 ' + n + ' <a onclick="changeName()" style="color:#1a73e8;cursor:pointer;margin-left:6px">đổi tên</a>'
-    : '';
+  const co = localStorage.getItem('coName') || (localStorage.getItem('coAPI') ? 'Công ty riêng' : '');
+  $('whoami').innerHTML =
+    (n ? '👤 ' + n + ' <a onclick="changeName()" style="color:#1a73e8;cursor:pointer;margin-left:6px">đổi tên</a>' : '') +
+    (co ? ' <span style="background:#e8f0fe;color:#1a73e8;border-radius:6px;padding:0 6px;margin-left:6px">🏢 ' + co + '</span>' : '') +
+    ' <a onclick="companySetup()" style="color:#bbb;cursor:pointer;margin-left:6px" title="Mã kết nối công ty">⚙️</a>';
+}
+
+// V27: nhập/đổi MÃ KẾT NỐI công ty (RESET = về mặc định)
+function companySetup() {
+  const cur = localStorage.getItem('coName') || (localStorage.getItem('coAPI') ? '(công ty tùy chỉnh)' : '(mặc định)');
+  const v = prompt('Đang kết nối: ' + cur + '\nDán MÃ KẾT NỐI công ty mới (hoặc gõ RESET để về mặc định):', '');
+  if (v === null) return;
+  const t = v.trim();
+  if (!t) return;
+  if (t.toUpperCase() === 'RESET') {
+    ['coAPI', 'coKEY', 'coName', 'projCache', 'lastProject', 'managerPin', 'ckDone', 'userName'].forEach(k => localStorage.removeItem(k));
+    location.reload(); return;
+  }
+  try {
+    const cfg = JSON.parse(atob(t.replace(/-/g, '+').replace(/_/g, '/')));
+    if (!cfg.u || !cfg.k) throw 0;
+    localStorage.setItem('coAPI', cfg.u);
+    localStorage.setItem('coKEY', cfg.k);
+    if (cfg.n) localStorage.setItem('coName', cfg.n); else localStorage.removeItem('coName');
+    ['projCache', 'lastProject', 'managerPin', 'ckDone', 'userName'].forEach(k => localStorage.removeItem(k));
+    alert('✅ Đã kết nối: ' + (cfg.n || 'công ty mới'));
+    location.reload();
+  } catch (e) { alert('❌ Mã không hợp lệ — kiểm tra lại.'); }
 }
 // V19: TỰ ĐĂNG KÝ — nhập tên 1 lần, backend lưu tên + ID máy (deviceId).
 // Từ đó báo cáo được nhận diện theo ID máy; tên trùng kiểu viết tự gom về người cũ.
@@ -648,6 +692,33 @@ function drawStamp(ctx, W, H) {
     else { dt(r[0]+': '+r[1], x+padX, cy, false); cy += lh; } });
 }
 
+// ===== V28: NÓI THAY GÕ (đeo găng tay khỏi gõ phím — Chrome Android; máy không hỗ trợ sẽ ẩn nút) =====
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) { $('micBtn').style.display = 'none'; }
+let _rec = null, _recOn = false;
+$('micBtn').addEventListener('click', () => {
+  if (!SR) return;
+  if (_recOn) { try { _rec.stop(); } catch (e) {} return; }
+  try {
+    _rec = new SR();
+    _rec.lang = 'vi-VN';
+    _rec.continuous = true;
+    _rec.interimResults = false;
+    _rec.onresult = ev => {
+      let t = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      t = t.trim();
+      if (t) $('note').value = ($('note').value ? $('note').value + ' ' : '') + t;
+    };
+    _rec.onend = () => { _recOn = false; $('micBtn').textContent = '🎤 Nói'; $('micBtn').style.color = '#1a73e8'; };
+    _rec.onerror = () => {};
+    _rec.start();
+    _recOn = true;
+    $('micBtn').textContent = '⏹ Dừng';
+    $('micBtn').style.color = '#c5221f';
+  } catch (e) { alert('Máy này không hỗ trợ nhận giọng nói.'); }
+});
+
 // ===== GỬI (lưu vào máy trước → không mất ảnh khi mất mạng) =====
 async function send() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
@@ -684,13 +755,19 @@ async function send() {
 }
 
 // ===== TRA CỨU =====
-async function loadReports() {
-  $('browseResults').innerHTML = '';
+// V27: tải theo trang 100 báo cáo — bấm "Tải thêm" để xem cũ hơn (nhẹ máy, nhanh)
+let browseHasMore = false;
+async function loadReports(more) {
+  if (!more) { allReports = []; $('browseResults').innerHTML = ''; }
   $('browseInfo').textContent = '⏳ Đang tải...';
   try {
-    const d = await post({ action: 'listReports', project: $('browseProject').value });
+    const d = await post({
+      action: 'listReports', project: $('browseProject').value,
+      limit: 100, offset: more ? allReports.length : 0
+    });
     if (!d.ok) throw new Error(d.error);
-    allReports = d.reports || [];
+    allReports = allReports.concat(d.reports || []);
+    browseHasMore = !!d.hasMore;
     renderReports();
   } catch (e) { $('browseInfo').textContent = '❌ ' + e.message; }
 }
@@ -765,7 +842,9 @@ function renderReports() {
     [r.time, r.project, r.category, r.description, r.note, r.user, r.model, r.gate, r.unit]
     .join(' ').toLowerCase().includes(q));
   $('browseInfo').textContent = list.length + ' báo cáo' + (q ? ' (lọc)' : '');
-  $('browseResults').innerHTML = list.map(r => reportCardHTML(r)).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>';
+  $('browseResults').innerHTML =
+    (list.map(r => reportCardHTML(r)).join('') || '<p style="margin-top:12px;color:#888">Chưa có báo cáo nào.</p>') +
+    (browseHasMore && !q ? '<button class="btn btn-camera" onclick="loadReports(true)" style="margin-top:10px">⬇️ Tải thêm báo cáo cũ hơn</button>' : '');
 }
 
 // ===== QUẢN LÝ (cho sếp) =====
@@ -822,6 +901,35 @@ function renderManage() {
       '<div class="meta">🕒 gần nhất: ' + esc(fmtTime(v.last)) + '</div></div>' +
       '<div id="muBody' + i + '" style="display:none;margin:-4px 0 10px 8px;padding-left:8px;border-left:3px solid #d2e3fc"></div>';
   }).join('') : '<p style="color:#888">Không có dữ liệu trong kỳ.</p>';
+
+  // V28: TIẾN ĐỘ THEO CẤU KIỆN — mỗi Unit đã chụp đủ hạng mục chưa, có cảnh báo/chụp lại không
+  const byUnit = {};
+  list.forEach(r => {
+    const u = (r.unit || '').trim(); if (!u) return;
+    const k = (r.project || '') + '|' + u;
+    if (!byUnit[k]) byUnit[k] = { unit: u, project: r.project || '', count: 0, cats: {}, warns: 0, redo: 0, ok: 0 };
+    const b = byUnit[k];
+    b.count++;
+    if (r.category) b.cats[r.category] = 1;
+    if (r.issues) b.warns++;
+    if (r.review === 'Đạt') b.ok++; else if (r.review) b.redo++;
+  });
+  const units = Object.values(byUnit).sort((a, b) => b.count - a.count);
+  if (units.length) {
+    html += '<h3 style="font-size:15px;margin:14px 0 4px">🔩 Tiến độ theo cấu kiện</h3>' + units.map(b => {
+      const catCfg = (projConfigs[b.project] || {}).categories || [];
+      const done = Object.keys(b.cats).length;
+      const prog = catCfg.length ? done + '/' + catCfg.length + ' hạng mục' : done + ' hạng mục';
+      const full = catCfg.length && done >= catCfg.length;
+      return '<div class="report" style="padding:10px"><b>' + escHtml(b.unit) + '</b> — ' + b.count + ' báo cáo' +
+        '<div class="meta">📁 ' + escHtml(b.project) +
+        ' • <span style="color:' + (full ? '#188038' : '#e65100') + ';font-weight:600">📋 ' + prog + (full ? ' ✓ đủ' : '') + '</span>' +
+        (b.warns ? ' • <span style="color:#c5221f">⚠️ ' + b.warns + ' cảnh báo</span>' : '') +
+        (b.redo ? ' • <span style="color:#c5221f">🔁 ' + b.redo + ' chụp lại</span>' : '') +
+        (b.ok ? ' • <span style="color:#188038">✅ ' + b.ok + ' đạt</span>' : '') +
+        '</div></div>';
+    }).join('');
+  }
 
   html += '<h3 style="font-size:15px;margin:14px 0 4px">📁 Theo dự án <span style="font-size:11px;color:#888;font-weight:400">(bấm để xem báo cáo)</span></h3>';
   const projs = Object.entries(byProj).sort((a,b) => b[1].count - a[1].count);
