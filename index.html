@@ -104,7 +104,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V20</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V21</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -123,6 +123,13 @@
       <input type="text" id="model" placeholder="Model (VD: A3-404-LB)">
       <input type="text" id="gate" placeholder="Cổng / Gate (VD: #21L2)" style="margin-top:8px">
       <input type="text" id="unit" placeholder="Cấu kiện (VD: Unit 64 - Rotunda)" style="margin-top:8px">
+    </div>
+
+    <!-- V21: Checklist chụp — hạng mục nào đã chụp cho cấu kiện này thì tự tick -->
+    <div id="checklist" style="display:none;margin-top:10px">
+      <label style="margin:0 0 4px">📋 Checklist chụp <span id="ckTitle" style="font-weight:400;color:#888"></span></label>
+      <div id="ckBody" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      <div style="font-size:11px;color:#aaa;margin-top:4px">Bấm vào mục để chọn hạng mục đó. Tick ✅ khi đã gửi báo cáo có chọn hạng mục.</div>
     </div>
 
     <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
@@ -308,8 +315,67 @@ else registerUser(localStorage.getItem('userName'), '', true).catch(() => {});  
 
 ['model','gate','unit'].forEach(id => {
   $(id).value = localStorage.getItem('fs_' + id) || '';
-  $(id).addEventListener('input', e => localStorage.setItem('fs_' + id, e.target.value));
+  $(id).addEventListener('input', e => {
+    localStorage.setItem('fs_' + id, e.target.value);
+    if (id === 'unit') renderChecklist();  // V21: đổi cấu kiện → cập nhật checklist
+  });
 });
+
+// ===== V21: CHECKLIST CHỤP THEO CẤU KIỆN / NGÀY =====
+// Nguồn tick: (1) báo cáo đã có trên máy chủ của dự án, (2) báo cáo vừa gửi từ máy này.
+let ckReports = [], ckLoadedFor = '';
+function ckKey() {
+  const proj = $('project').value;
+  const unit = usesComponentInfo() ? ($('unit').value || '').trim() : '';
+  return unit ? proj + '|' + unit : proj + '|' + new Date().toDateString();
+}
+function ckLocalDone() {
+  try { return JSON.parse(localStorage.getItem('ckDone') || '{}'); } catch (e) { return {}; }
+}
+function ckMarkDone(cat) {
+  if (!cat) return;  // gửi kiểu "AI tự phân loại" thì không tick được
+  const all = ckLocalDone();
+  const k = ckKey();
+  if (!all[k]) all[k] = [];
+  if (!all[k].includes(cat)) all[k].push(cat);
+  try { localStorage.setItem('ckDone', JSON.stringify(all)); } catch (e) {}
+  renderChecklist();
+}
+async function ckLoad() {
+  renderChecklist();  // vẽ ngay bằng dữ liệu cục bộ, rồi tải nền từ máy chủ
+  const proj = $('project').value;
+  if (!proj || ckLoadedFor === proj) return;
+  try {
+    const d = await post({ action: 'listReports', project: proj });
+    if (d.ok) { ckReports = d.reports || []; ckLoadedFor = proj; renderChecklist(); }
+  } catch (e) {}
+}
+function renderChecklist() {
+  const box = $('checklist'); if (!box) return;
+  const proj = $('project').value;
+  const cfg = projConfigs[proj];
+  const cats = cfg ? cfg.categories : [];
+  if (!proj || !cats.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const unit = usesComponentInfo() ? ($('unit').value || '').trim() : '';
+  $('ckTitle').textContent = unit ? '— ' + unit : '— hôm nay';
+  const today = new Date().toDateString();
+  const doneSrv = {};
+  (ckLoadedFor === proj ? ckReports : []).forEach(r => {
+    if (!r.category) return;
+    if (unit) { if ((r.unit || '').trim() === unit) doneSrv[r.category] = 1; }
+    else { const d = parseT(r.time); if (!isNaN(d) && d.toDateString() === today) doneSrv[r.category] = 1; }
+  });
+  const local = ckLocalDone()[ckKey()] || [];
+  const esc = s => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  $('ckBody').innerHTML = cats.map(c => {
+    const done = doneSrv[c] || local.includes(c);
+    return '<span onclick="ckPick(this)" data-cat="' + esc(c).replace(/"/g, '&quot;') + '" style="cursor:pointer;padding:5px 10px;border-radius:14px;font-size:13px;border:1px solid ' +
+      (done ? '#188038;background:#e6f4ea;color:#188038' : '#ccc;background:#fff;color:#555') + '">' +
+      (done ? '✅ ' : '⬜ ') + esc(c) + '</span>';
+  }).join('');
+}
+function ckPick(el) { $('category').value = el.dataset.cat || ''; }
 
 // ===== Danh sách dự án + hạng mục riêng từng dự án =====
 const ALL = '__all__';
@@ -318,7 +384,7 @@ let projConfigs = {};   // { tên dự án: { categories: [...] } }
 function fillProjectSelects(projects) {
   const names = projects.map(p => p.name);
   projConfigs = {};
-  projects.forEach(p => projConfigs[p.name] = { categories: p.categories || [] });
+  projects.forEach(p => projConfigs[p.name] = { categories: p.categories || [], useComponents: !!p.useComponents });
   const saved = localStorage.getItem('lastProject');
   const opts = names.map(n => '<option value="' + n.replace(/"/g,'&quot;') + '">' + n + '</option>').join('');
   $('project').innerHTML = opts || '<option value="">(Chưa có dự án — bấm ➕ Thêm)</option>';
@@ -326,6 +392,7 @@ function fillProjectSelects(projects) {
   if (saved && names.includes(saved)) $('project').value = saved;
   fillCategories();
   toggleComponentFields();
+  ckLoad();  // V21
 }
 
 function fillCategories() {
@@ -352,6 +419,7 @@ $('project').addEventListener('change', e => {
   localStorage.setItem('lastProject', e.target.value);
   fillCategories();
   toggleComponentFields();
+  ckLoad();  // V21: đổi dự án → nạp checklist
 });
 
 // ➕ Thêm hạng mục cho dự án đang chọn
@@ -370,7 +438,12 @@ $('addCat').addEventListener('click', async () => {
   } catch (e) { alert('❌ ' + e.message); }
 });
 
-function usesComponentInfo() { return /ống lồng/i.test($('project').value); }
+// V21: cấu kiện bật/tắt THEO TỪNG DỰ ÁN (cột "Cấu kiện (x = dùng)" tab Dự án).
+// Vẫn giữ nhận diện "ống lồng" làm dự phòng khi cache cũ chưa có cờ.
+function usesComponentInfo() {
+  const cfg = projConfigs[$('project').value];
+  return (cfg && cfg.useComponents) || /ống lồng/i.test($('project').value);
+}
 function toggleComponentFields() {
   $('componentFields').style.display = usesComponentInfo() ? 'block' : 'none';
 }
@@ -560,6 +633,7 @@ async function send() {
   // 2) Đã an toàn → dọn khung chụp + xóa nháp để chụp tiếp ngay
   photos = []; $('note').value = ''; renderThumbs(); updateCamCount();
   dfClear();
+  ckMarkDone(payload.category);  // V21: tick checklist mục vừa gửi
   allReports = []; // làm mới tra cứu lần sau
   st.className = 'info';
   st.innerHTML = '✅ Đã lưu <b>' + count + ' ảnh</b> vào máy an toàn. ☁️ Đang gửi lên...';
