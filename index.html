@@ -104,10 +104,10 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V18</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V19</span></p>
 
-    <label>Tên của bạn <a id="addUserLink" style="float:right;color:#1a73e8;font-weight:600;text-decoration:none;cursor:pointer">➕ Thêm người</a></label>
-    <select id="user"></select>
+    <label>Tên của bạn (đã đăng ký theo máy này)</label>
+    <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
 
     <label>Dự án
       <a id="setFolder" style="float:right;color:#188038;font-weight:600;text-decoration:none;cursor:pointer">📁 Thư mục</a>
@@ -168,11 +168,10 @@
 <!-- Modal nhập tên bắt buộc (lần đầu trên máy này) -->
 <div id="nameModal" class="modal-bg">
   <div class="modal">
-    <h3>👤 Bạn là ai?</h3>
-    <p style="font-size:13px;color:#666;margin-bottom:10px">Chọn tên từ danh sách — máy này sẽ ghi nhớ, lần sau không cần chọn lại.</p>
-    <select id="nameInput"></select>
-    <p style="font-size:13px;margin-top:8px">Không có tên bạn? <a id="addUserLink2" style="color:#1a73e8;font-weight:600;cursor:pointer">➕ Thêm người mới</a></p>
-    <button class="btn btn-send" style="margin-top:10px" onclick="saveNameGate()">Lưu & Bắt đầu</button>
+    <h3>👤 Nhập tên của bạn</h3>
+    <p style="font-size:13px;color:#666;margin-bottom:10px">Tên sẽ được <b>đăng ký kèm ID máy này</b> — lần sau mở app không cần nhập lại.</p>
+    <input type="text" id="nameInput" placeholder="VD: Thế Mỹ (viết đầy đủ, có dấu)" autocomplete="name">
+    <button class="btn btn-send" style="margin-top:10px" onclick="saveNameGate()">Đăng ký & Bắt đầu</button>
   </div>
 </div>
 
@@ -258,47 +257,54 @@ function updateWhoami() {
     ? '👤 ' + n + ' <a onclick="changeName()" style="color:#1a73e8;cursor:pointer;margin-left:6px">đổi tên</a>'
     : '';
 }
-// V18: tên chọn từ danh sách chuẩn (tab "Người dùng" ở backend) — hết trùng/sai tên
-let userList = [];
-function fillUserSelects() {
-  const cur = (localStorage.getItem('userName') || '').trim();
-  let names = userList.slice();
-  if (cur && !names.includes(cur)) names.unshift(cur);  // tên cũ trên máy chưa có trong danh sách → vẫn dùng được
-  const esc = s => String(s).replace(/"/g, '&quot;');
-  const opts = names.map(n => '<option value="' + esc(n) + '">' + n + '</option>').join('');
-  $('user').innerHTML = opts || '<option value="">(Chưa có ai — bấm ➕ Thêm người)</option>';
-  $('nameInput').innerHTML = opts || '<option value="">(Chưa có ai — bấm ➕ Thêm người mới)</option>';
-  if (cur) { $('user').value = cur; $('nameInput').value = cur; }
-}
-function changeName() { fillUserSelects(); $('nameModal').classList.add('show'); }
-function saveNameGate() {
-  const n = ($('nameInput').value || '').trim();
-  if (!n) { alert('Vui lòng chọn tên (hoặc bấm ➕ Thêm người mới).'); return; }
-  localStorage.setItem('userName', n);
-  $('user').value = n;
-  $('nameModal').classList.remove('show');
+// V19: TỰ ĐĂNG KÝ — nhập tên 1 lần, backend lưu tên + ID máy (deviceId).
+// Từ đó báo cáo được nhận diện theo ID máy; tên trùng kiểu viết tự gom về người cũ.
+function setUserDisplay() {
+  $('user').value = localStorage.getItem('userName') || '';
   updateWhoami();
 }
-async function addNewUser() {
-  const name = (prompt('Tên người mới (viết đầy đủ, có dấu — VD: Thế Mỹ):') || '').trim();
-  if (!name) return;
-  const pin = (prompt('Mã PIN của Sếp (nếu chưa thiết lập PIN thì để trống):') || '').trim();
-  try {
-    const d = await post({ action: 'addUser', name, pin });
-    if (!d.ok) throw new Error(d.error);
-    userList = d.users || [];
-    localStorage.setItem('userName', d.name || name);
-    fillUserSelects();
-    updateWhoami();
-    alert('✅ Đã thêm: ' + (d.name || name));
-  } catch (e) { alert('❌ ' + e.message); }
+function changeName() {
+  $('nameInput').value = localStorage.getItem('userName') || '';
+  $('nameModal').classList.add('show');
 }
-$('addUserLink').addEventListener('click', addNewUser);
-$('addUserLink2').addEventListener('click', addNewUser);
-$('user').addEventListener('change', e => { localStorage.setItem('userName', e.target.value); updateWhoami(); });
-fillUserSelects();
-updateWhoami();
+async function registerUser(name, pin, silent) {
+  const d = await post({ action: 'registerUser', name, deviceId: DEVICE_ID, pin: pin || '' });
+  if (!d.ok) {
+    if (d.needPin) {
+      if (silent) {
+        // máy này đã thuộc người khác → dùng tên chủ máy backend trả về
+        if (d.name) { localStorage.setItem('userName', d.name); setUserDisplay(); }
+        return d.name || null;
+      }
+      const p = prompt((d.error || 'Cần mã PIN của Sếp') + '\nNhập PIN (hoặc Hủy):');
+      if (p === null) return null;
+      return registerUser(name, p.trim(), false);
+    }
+    throw new Error(d.error || 'Không đăng ký được');
+  }
+  localStorage.setItem('userName', d.name || name);
+  setUserDisplay();
+  return d.name || name;
+}
+async function saveNameGate() {
+  const n = ($('nameInput').value || '').trim();
+  if (!n) { alert('Vui lòng nhập tên.'); return; }
+  try {
+    const r = await registerUser(n, '', false);
+    if (r === null) return;  // người dùng hủy nhập PIN
+    $('nameModal').classList.remove('show');
+    if (r !== n) alert('ℹ️ Tên này đã có trong hệ thống — máy được gắn với: ' + r);
+  } catch (e) {
+    // chưa có mạng → lưu tạm trên máy, lần mở app sau sẽ tự đăng ký lại
+    localStorage.setItem('userName', n);
+    setUserDisplay();
+    $('nameModal').classList.remove('show');
+    alert('⚠️ ' + e.message + '\nTên đã lưu tạm trên máy, sẽ tự đăng ký khi có mạng.');
+  }
+}
+setUserDisplay();
 if (!localStorage.getItem('userName')) $('nameModal').classList.add('show');  // bắt buộc lần đầu
+else registerUser(localStorage.getItem('userName'), '', true).catch(() => {});  // máy cũ: tự đồng bộ với backend
 
 ['model','gate','unit'].forEach(id => {
   $(id).value = localStorage.getItem('fs_' + id) || '';
@@ -330,11 +336,7 @@ function fillCategories() {
 }
 
 post({ action: 'projectsFull' })
-  .then(d => {
-    if (!d.ok) return;
-    fillProjectSelects(d.projects || []);
-    if (Array.isArray(d.users)) { userList = d.users; fillUserSelects(); }
-  })
+  .then(d => { if (d.ok) fillProjectSelects(d.projects || []); })
   .catch(() => {});
 
 $('project').addEventListener('change', e => {
