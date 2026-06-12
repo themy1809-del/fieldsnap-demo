@@ -101,10 +101,12 @@
   </div>
   <div id="whoami" style="font-size:12px;color:#888;margin-bottom:6px"></div>
   <div id="pendingBanner" style="display:none;background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px"></div>
+  <!-- V30: nhắc TÔI những báo cáo bị Sếp yêu cầu chụp lại -->
+  <div id="redoBanner" style="display:none;background:#fce8e6;border:1px solid #f5b5b1;color:#c5221f;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px"></div>
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V28</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V30</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -1131,6 +1133,22 @@ function showUpdateBanner() {
   const card = document.querySelector('.card');
   card.insertBefore(d, card.children[1]);
 }
+
+// ===== V30: BANNER NHẮC CHỤP LẠI — báo cáo của TÔI đang bị Sếp yêu cầu chụp lại =====
+async function loadMyRedo() {
+  const b = $('redoBanner'); if (!b) return;
+  try {
+    const d = await post({ action: 'myRedo', user: localStorage.getItem('userName') || '', deviceId: DEVICE_ID });
+    if (!d.ok || !d.items || !d.items.length) { b.style.display = 'none'; return; }
+    b.style.display = 'block';
+    b.innerHTML = '🔁 <b>Bạn có ' + d.items.length + ' báo cáo cần CHỤP LẠI:</b><br>' +
+      d.items.slice(0, 3).map(i =>
+        '• <b>' + escHtml(i.unit || i.project) + '</b> — ' + escHtml(String(i.reason || '').replace('Chụp lại: ', '')) +
+        ' <span style="color:#a06664">(' + escHtml(i.time) + ')</span>').join('<br>') +
+      (d.items.length > 3 ? '<br>…và ' + (d.items.length - 3) + ' mục nữa' : '');
+  } catch (e) {}
+}
+loadMyRedo();
 
 // V18: khôi phục ảnh chụp dở (đã lưu nháp) nếu lần trước tắt app khi chưa bấm Gửi
 dfGet().then(rec => {
