@@ -1,7 +1,10 @@
 {
-  "name": "FieldSnap — Báo cáo hiện trường",
+  "id": "./",
+  "lang": "vi",
+  "name": "FieldSnap — Báo cáo QC hiện trường",
   "short_name": "FieldSnap",
-  "description": "Chụp ảnh hiện trường, AI phân tích, lưu Google Sheet",
+  "description": "Chụp ảnh cấu kiện → AI đọc kích thước, phát hiện lỗi → báo Telegram tức thì → Sếp duyệt → xuất PDF nghiệm thu.",
+  "categories": ["business", "productivity", "utilities"],
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
