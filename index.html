@@ -106,7 +106,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V30</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V32</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -931,6 +931,38 @@ function renderManage() {
         (b.ok ? ' • <span style="color:#188038">✅ ' + b.ok + ' đạt</span>' : '') +
         '</div></div>';
     }).join('');
+  }
+
+  // V32: CHẤT LƯỢNG — tỷ lệ báo cáo có cảnh báo theo người và theo tháng
+  const qU = {}, qM = {};
+  list.forEach(r => {
+    const u = r.user || '(không tên)';
+    if (!qU[u]) qU[u] = { n: 0, w: 0 };
+    qU[u].n++; if (r.issues) qU[u].w++;
+    const d = parseT(r.time);
+    if (!isNaN(d)) {
+      const mk = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      if (!qM[mk]) qM[mk] = { n: 0, w: 0 };
+      qM[mk].n++; if (r.issues) qM[mk].w++;
+    }
+  });
+  const qBar = (x, label) => {
+    const p = x.n ? Math.round(x.w * 100 / x.n) : 0;
+    const color = p >= 30 ? '#c5221f' : p >= 10 ? '#e65100' : '#188038';
+    return '<div style="margin-top:6px;font-size:13px">' + label +
+      ' — ' + x.w + '/' + x.n + ' cảnh báo (<b style="color:' + color + '">' + p + '%</b>)' +
+      '<div style="background:#eee;border-radius:4px;height:7px;margin-top:2px">' +
+      '<div style="width:' + p + '%;background:' + color + ';height:7px;border-radius:4px"></div></div></div>';
+  };
+  const qUsers = Object.entries(qU).filter(([, v]) => v.n >= 1).sort((a, b) => b[1].n - a[1].n);
+  const qMonths = Object.keys(qM).sort().reverse().slice(0, 6);
+  if (qUsers.length) {
+    html += '<h3 style="font-size:15px;margin:14px 0 4px">📈 Chất lượng (tỷ lệ có cảnh báo)</h3>' +
+      '<div class="report" style="padding:10px"><b style="font-size:13px;color:#555">Theo người chụp</b>' +
+      qUsers.map(([u, v]) => qBar(v, escHtml(u))).join('') +
+      '<b style="font-size:13px;color:#555;display:block;margin-top:12px">Theo tháng</b>' +
+      qMonths.map(mk => qBar(qM[mk], 'Tháng ' + mk.slice(5) + '/' + mk.slice(0, 4))).join('') +
+      '</div>';
   }
 
   html += '<h3 style="font-size:15px;margin:14px 0 4px">📁 Theo dự án <span style="font-size:11px;color:#888;font-weight:400">(bấm để xem báo cáo)</span></h3>';
