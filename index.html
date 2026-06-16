@@ -113,7 +113,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V37</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V38</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -610,16 +610,19 @@ function zoomBy(sign) {
 // V37: cảm biến nghiêng THỤ ĐỘNG (Android tự chạy, KHÔNG popup; iOS không chạy cũng không sao)
 let _gamma = null;
 try { window.addEventListener('deviceorientation', function (e) { if (e.gamma != null) _gamma = e.gamma; }); } catch (e) {}
-// V37: độ cần xoay ảnh để thành ĐỨNG — ưu tiên góc màn hình (không cần quyền), dự phòng cảm biến nghiêng
-function captureDeg() {
-  let a = null; try { a = (screen.orientation && screen.orientation.angle); } catch (e) {}
-  if (a == null) { try { a = window.orientation; } catch (e) {} }
-  a = a || 0;
-  if (a === 90) return 90;
-  if (a === 270 || a === -90) return -90;
-  if (a === 180) return 180;
-  if (_gamma != null && Math.abs(_gamma) > 45) return _gamma > 0 ? 90 : -90;  // khóa xoay + cầm ngang
-  return 0;
+// V38: đang cầm DỌC hay NGANG? — theo màn hình (khi bật auto-xoay), dự phòng cảm biến nghiêng (Android khóa xoay)
+function isPortraitNow() {
+  if (_gamma != null && Math.abs(_gamma) > 45) return false;   // cảm biến: đang cầm ngang
+  try { return window.matchMedia('(orientation: portrait)').matches; } catch (e) { return true; }
+}
+// V38: chỉ xoay khi KHUNG HÌNH lệch hướng so với màn hình đang xem → ảnh lưu KHỚP PREVIEW
+// (cầm dọc ra tấm cao, cầm ngang ra tấm rộng, cả hai đều đúng chiều).
+function captureDeg(frameLandscape) {
+  const portrait = isPortraitNow();
+  const need = (portrait && frameLandscape) || (!portrait && !frameLandscape);
+  if (!need) return 0;
+  let a = 0; try { a = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
+  return (a === 270 || a === -90) ? 90 : -90;
 }
 function snap() {
   if (photos.length >= MAX_PHOTOS) { alert('Tối đa ' + MAX_PHOTOS + ' ảnh/báo cáo'); return; }
@@ -630,8 +633,8 @@ function snap() {
   if (!_zoomHW && _zoom > 1) { sw = Math.round(vw / _zoom); sh = Math.round(vh / _zoom); sx = (vw - sw) >> 1; sy = (vh - sh) >> 1; }
   const scale = Math.min(1, 1280 / Math.max(sw, sh));
   const w = Math.round(sw * scale), h = Math.round(sh * scale);
-  // V37: xoay ảnh cho ĐỨNG theo hướng cầm máy (cầm dọc giữ nguyên; cầm ngang xoay về đứng)
-  const deg = captureDeg();
+  // V38: xoay cho ảnh lưu KHỚP với preview anh đang thấy (dọc→cao, ngang→rộng, đều đúng chiều)
+  const deg = captureDeg(w > h);
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   if (deg === 90 || deg === -90) { canvas.width = h; canvas.height = w; }
