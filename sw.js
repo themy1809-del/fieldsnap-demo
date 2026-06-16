@@ -3,6 +3,7 @@
 // API backend là POST (không cache) — outbox trong app đã lo phần gửi lại.
 
 const CACHE = 'fieldsnap-v35';
+// redeploy nudge 2026-06-16 (ép GitHub Pages build lại commit V35)
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
