@@ -106,7 +106,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V33</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V35</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -621,8 +621,8 @@ function snap() {
   photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
   $('flash').style.opacity = '0.7'; setTimeout(() => $('flash').style.opacity = '0', 120);
   if (navigator.vibrate) navigator.vibrate(40);
-  updateCamCount(); renderThumbs();
-  dfSave();  // V18: lưu nháp vào máy ngay khi chụp — tắt app vẫn còn ảnh
+  updateCamCount(); appendThumb();        // V35: chỉ thêm 1 thumb mới (không vẽ lại cả dải)
+  dfSaveDebounced();                       // V35: gộp lưu nháp — chụp liên tục không ghi đĩa mỗi lần
 }
 function closeCamera() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } $('camOverlay').classList.remove('show'); }
 function sendFromCamera() { if (photos.length === 0) { closeCamera(); return; } closeCamera(); send(); }
@@ -646,9 +646,20 @@ $('fileInput').addEventListener('change', async e => {
 });
 function renderThumbs() {
   $('thumbs').innerHTML = photos.map((b64, i) =>
-    '<div class="thumb"><img src="data:image/jpeg;base64,' + b64 + '"><button class="del" onclick="removePhoto(' + i + ')">✕</button></div>').join('');
+    '<div class="thumb"><img loading="lazy" src="data:image/jpeg;base64,' + b64 + '"><button class="del" onclick="removePhoto(' + i + ')">✕</button></div>').join('');
+}
+// V35: thêm 1 thumbnail mới vào cuối — KHÔNG dựng lại cả dải (chụp 50 ảnh vẫn mượt)
+function appendThumb() {
+  const i = photos.length - 1;
+  const d = document.createElement('div');
+  d.className = 'thumb';
+  d.innerHTML = '<img loading="lazy" src="data:image/jpeg;base64,' + photos[i] + '"><button class="del" onclick="removePhoto(' + i + ')">✕</button>';
+  $('thumbs').appendChild(d);
 }
 function removePhoto(i) { photos.splice(i, 1); updateCamCount(); renderThumbs(); dfSave(); }
+// V35: gộp lưu nháp — chụp liên tục chỉ ghi đĩa 1 lần sau ~1.2s ngừng tay
+let _dfTimer = null;
+function dfSaveDebounced() { clearTimeout(_dfTimer); _dfTimer = setTimeout(dfSave, 1200); }
 
 // ===== ĐÓNG DẤU (không còn GPS) =====
 function roundRect(ctx, x, y, w, h, r) {
@@ -851,14 +862,20 @@ function renderReports() {
 
 // ===== QUẢN LÝ (cho sếp) =====
 let manageReports = [], mfRange = 'today', _muKeys = [], _mpKeys = [];
-async function loadManage() {
-  $('manageBody').innerHTML = '⏳ Đang tải...';
+let _manageAt = 0;  // V35: thời điểm tải gần nhất
+async function loadManage(force) {
+  // V35: đã có dữ liệu & mới tải < 90s → hiện ngay, KHÔNG gọi lại server (Apps Script chậm 2-5s/lần)
+  const fresh = manageReports.length && (Date.now() - _manageAt < 90000);
+  if (fresh && !force) { renderManage(); return; }
+  if (manageReports.length) renderManage();   // hiện dữ liệu cũ ngay, làm mới nền
+  else $('manageBody').innerHTML = '⏳ Đang tải...';
   try {
-    const d = await post({ action: 'listReports', project: '__all__' });
+    const d = await post({ action: 'listReports', project: '__all__', limit: 200 });
     if (!d.ok) throw new Error(d.error);
     manageReports = d.reports || [];
+    _manageAt = Date.now();
     renderManage();
-  } catch (e) { $('manageBody').innerHTML = '❌ ' + e.message; }
+  } catch (e) { if (!manageReports.length) $('manageBody').innerHTML = '❌ ' + e.message; }
 }
 function setMfRange(r) {
   mfRange = r;
