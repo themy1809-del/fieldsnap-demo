@@ -47,9 +47,6 @@
   .thumb .del { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px;
                 border-radius: 50%; border: none; background: rgba(0,0,0,.65); color: #fff;
                 font-size: 13px; line-height: 22px; cursor: pointer; padding: 0; }
-  .thumb .rot { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px;
-                border-radius: 50%; border: none; background: rgba(26,115,232,.85); color: #fff;
-                font-size: 14px; line-height: 22px; cursor: pointer; padding: 0; }
 
   /* Camera toàn màn hình */
   #camOverlay { position: fixed; inset: 0; height: 100dvh; background: #000; z-index: 9999;
@@ -562,26 +559,8 @@ async function pickFolder(id, el) {
 }
 
 // ===== CAMERA =====
-// V25: đọc CẢM BIẾN để biết máy đang cầm ngang hay dọc THẬT — đúng cả khi KHÓA XOAY màn hình.
-let _tilt = { beta: null, gamma: null };
-window.addEventListener('deviceorientation', e => {
-  if (e.beta !== null) { _tilt.beta = e.beta; _tilt.gamma = e.gamma; }
-});
-function physicalAngle() {
-  const b = _tilt.beta, g = _tilt.gamma;
-  if (b === null || g === null) return null;          // không có cảm biến
-  if (Math.abs(g) > 55) return g > 0 ? 90 : 270;      // cầm NGANG (trái/phải)
-  if (Math.abs(b) > 35 && Math.abs(b) < 145) return 0; // cầm ĐỨNG
-  return null;                                         // nằm phẳng/bất định
-}
-
 async function openCamera() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
-  // V25: iPhone cần xin quyền cảm biến hướng máy (phải gọi trong thao tác bấm)
-  try {
-    if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission)
-      DeviceOrientationEvent.requestPermission().catch(() => {});
-  } catch (e) {}
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } }, audio: false });
     $('camVideo').srcObject = camStream;
@@ -595,30 +574,11 @@ function snap() {
   const vw = video.videoWidth, vh = video.videoHeight;
   const scale = Math.min(1, 1280 / Math.max(vw, vh));
   const w = Math.round(vw * scale), h = Math.round(vh * scale);
-  // V36: xác định hướng cầm máy THẬT rồi xoay ảnh cho khớp.
-  // MẶC ĐỊNH khi không chắc = DỌC (đa số ảnh QC chụp dọc) → hết cảnh chụp đứng ra ảnh ngang.
-  // Sai vẫn cứu được: mỗi ảnh có nút ⟳ xoay tay.
-  const frameLandscape = w > h;
-  const phys = physicalAngle();
-  let wantLandscape;
-  if (phys === 90 || phys === 270) wantLandscape = true;     // cảm biến: đang cầm NGANG
-  else if (phys === 0) wantLandscape = false;                 // cảm biến: đang cầm DỌC
-  else {                                                       // không cảm biến → theo màn hình
-    let angle = 0; try { angle = (screen.orientation && screen.orientation.angle) || 0; } catch (e) {}
-    wantLandscape = (angle === 90 || angle === 270);
-  }
-  let rot = 0;  // +90 = thuận kim đồng hồ
-  if (!wantLandscape && frameLandscape) rot = -90;       // muốn dọc nhưng khung ngang → dựng dọc
-  else if (wantLandscape && !frameLandscape) rot = 90;   // muốn ngang nhưng khung dọc → xoay ngang
+  // V36: chụp ĐÚNG NHƯ PREVIEW — không tự xoay. Cầm dọc ra ảnh dọc (cao), cầm ngang ra ảnh ngang (rộng).
   const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  if (rot !== 0) {
-    canvas.width = h; canvas.height = w;
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(rot * Math.PI / 180);
-    ctx.drawImage(video, -w / 2, -h / 2, w, h);
-  } else { canvas.width = w; canvas.height = h; ctx.drawImage(video, 0, 0, w, h); }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(video, 0, 0, w, h);
   drawStamp(ctx, canvas.width, canvas.height);
   photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
   $('flash').style.opacity = '0.7'; setTimeout(() => $('flash').style.opacity = '0', 120);
@@ -648,7 +608,6 @@ $('fileInput').addEventListener('change', async e => {
 });
 function thumbHTML(b64, i) {
   return '<img loading="lazy" src="data:image/jpeg;base64,' + b64 + '">' +
-    '<button class="rot" onclick="rotatePhoto(' + i + ')" title="Xoay ảnh">⟳</button>' +
     '<button class="del" onclick="removePhoto(' + i + ')">✕</button>';
 }
 function renderThumbs() {
@@ -661,21 +620,6 @@ function appendThumb() {
   d.className = 'thumb';
   d.innerHTML = thumbHTML(photos[i], i);
   $('thumbs').appendChild(d);
-}
-// V36: xoay tay 1 ảnh 90° (bấm tiếp để xoay tiếp) — cứu mọi trường hợp auto đoán sai hướng
-function rotatePhoto(i) {
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = img.height; c.height = img.width;
-    const x = c.getContext('2d');
-    x.translate(c.width / 2, c.height / 2);
-    x.rotate(Math.PI / 2);                 // 90° thuận kim đồng hồ
-    x.drawImage(img, -img.width / 2, -img.height / 2);
-    photos[i] = c.toDataURL('image/jpeg', 0.85).split(',')[1];
-    renderThumbs(); dfSave();
-  };
-  img.src = 'data:image/jpeg;base64,' + photos[i];
 }
 function removePhoto(i) { photos.splice(i, 1); updateCamCount(); renderThumbs(); dfSave(); }
 // V35: gộp lưu nháp — chụp liên tục chỉ ghi đĩa 1 lần sau ~1.2s ngừng tay
