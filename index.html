@@ -113,7 +113,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V39</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V40</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -571,8 +571,37 @@ async function pickFolder(id, el) {
 }
 
 // ===== CAMERA =====
+// ===== V40: CẢM BIẾN HƯỚNG MÁY — xin quyền 1 LẦN, sau đó tự xoay ảnh đúng chiều =====
+let _beta = null, _gamma = null, _motionOn = false, _motionAsked = false;
+function attachMotion() {
+  if (_motionOn) return; _motionOn = true;
+  try { window.addEventListener('deviceorientation', function (e) {
+    if (e.gamma != null) { _beta = e.beta; _gamma = e.gamma; }
+  }); } catch (e) {}
+}
+function ensureMotion() {
+  if (_motionAsked) { attachMotion(); return; }
+  _motionAsked = true;
+  try {
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iPhone: popup hiện ĐÚNG 1 LẦN (lần sau iOS tự nhớ, không hỏi lại)
+      DeviceOrientationEvent.requestPermission().then(function (s) { if (s === 'granted') attachMotion(); }).catch(function () {});
+    } else {
+      attachMotion();   // Android: gắn thẳng, KHÔNG popup
+    }
+  } catch (e) { attachMotion(); }
+}
+// V40: độ xoay để ảnh thành ĐÚNG CHIỀU theo cảm biến. Chưa có cảm biến → 0 (giữ nguyên như V39).
+function captureDeg(frameLandscape) {
+  if (_gamma == null) return 0;
+  const wantLandscape = Math.abs(_gamma) > 45;   // đang cầm ngang?
+  if (wantLandscape === frameLandscape) return 0; // hướng khung đã khớp → không xoay
+  return _gamma > 0 ? -90 : 90;                   // xoay 90°, chiều theo bên nghiêng (sai thì đảo dấu)
+}
+
 async function openCamera() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
+  ensureMotion();           // V40: xin quyền cảm biến (chỉ lần đầu)
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } }, audio: false });
     $('camVideo').srcObject = camStream;
@@ -616,11 +645,17 @@ function snap() {
   if (!_zoomHW && _zoom > 1) { sw = Math.round(vw / _zoom); sh = Math.round(vh / _zoom); sx = (vw - sw) >> 1; sy = (vh - sh) >> 1; }
   const scale = Math.min(1, 1280 / Math.max(sw, sh));
   const w = Math.round(sw * scale), h = Math.round(sh * scale);
-  // V39: chụp ĐÚNG Y NHƯ PREVIEW — KHÔNG tự xoay. Anh thấy sao lưu vậy.
+  // V40: xoay ảnh về ĐÚNG CHIỀU bằng cảm biến (đã xin quyền 1 lần); chưa có cảm biến → giữ nguyên
+  const deg = captureDeg(w > h);
   const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+  if (deg === 90 || deg === -90) { canvas.width = h; canvas.height = w; }
+  else { canvas.width = w; canvas.height = h; }
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  if (deg) ctx.rotate(deg * Math.PI / 180);
+  ctx.drawImage(video, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
+  ctx.restore();
   drawStamp(ctx, canvas.width, canvas.height);
   photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
   $('flash').style.opacity = '0.7'; setTimeout(() => $('flash').style.opacity = '0', 120);
