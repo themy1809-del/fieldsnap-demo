@@ -113,7 +113,7 @@
 
   <!-- ========== CHẾ ĐỘ CHỤP ========== -->
   <div id="secCapture">
-    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V41</span></p>
+    <p class="sub">Chụp nhiều ảnh → AI phân tích nền → lưu Google Sheet <span style="float:right;color:#bbb">V42</span></p>
 
     <label>Tên của bạn (đã đăng ký theo máy này)</label>
     <input type="text" id="user" disabled style="background:#f5f5f5;color:#333" placeholder="Chưa đăng ký — bấm 'đổi tên' phía trên">
@@ -657,7 +657,7 @@ function snap() {
   ctx.drawImage(video, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
   ctx.restore();
   drawStamp(ctx, canvas.width, canvas.height);
-  photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+  photos.push(canvas.toDataURL('image/jpeg', 0.72).split(',')[1]);  // V42: nhẹ ~40% → gửi nhanh hơn
   $('flash').style.opacity = '0.7'; setTimeout(() => $('flash').style.opacity = '0', 120);
   if (navigator.vibrate) navigator.vibrate(40);
   updateCamCount(); appendThumb();        // V35: chỉ thêm 1 thumb mới (không vẽ lại cả dải)
@@ -679,7 +679,7 @@ $('fileInput').addEventListener('change', async e => {
   const c = canvas.getContext('2d');
   c.drawImage(img, 0, 0, canvas.width, canvas.height);
   drawStamp(c, canvas.width, canvas.height);
-  photos.push(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+  photos.push(canvas.toDataURL('image/jpeg', 0.72).split(',')[1]);  // V42: nhẹ ~40% → gửi nhanh hơn
   e.target.value = ''; updateCamCount(); renderThumbs();
   dfSave();
 });
