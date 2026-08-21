@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FieldSnap — Kiểm tra camera 0.5×</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; padding: 16px; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+  .sub { color: #94a3b8; font-size: 14px; margin-bottom: 16px; }
+  button { font-size: 18px; font-weight: 700; border: none; border-radius: 12px;
+    padding: 16px 20px; width: 100%; margin-bottom: 12px; cursor: pointer; }
+  #go { background: #22c55e; color: #052e13; }
+  #copy { background: #334155; color: #fff; display: none; }
+  #go:active { background: #16a34a; }
+  .verdict { border-radius: 12px; padding: 16px; font-size: 17px; font-weight: 700;
+    margin: 12px 0; line-height: 1.45; }
+  .ok  { background: #052e13; border: 2px solid #22c55e; color: #86efac; }
+  .mid { background: #3a2e05; border: 2px solid #f59e0b; color: #fcd34d; }
+  .no  { background: #3a0808; border: 2px solid #ef4444; color: #fca5a5; }
+  .cam { background: #1e293b; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    font-size: 15px; }
+  .cam b { color: #fff; }
+  .cam .z { font-size: 22px; font-weight: 800; margin-top: 4px; }
+  .z.wide { color: #4ade80; }
+  .z.narrow { color: #fca5a5; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px;
+    border-radius: 6px; margin-left: 6px; vertical-align: middle; }
+  .tag.back { background: #1d4ed8; color: #dbeafe; }
+  .tag.front { background: #475569; color: #e2e8f0; }
+  .tag.uw { background: #15803d; color: #dcfce7; }
+  pre { background: #0b1220; border: 1px solid #1e293b; border-radius: 10px; padding: 12px;
+    font-size: 12px; white-space: pre-wrap; word-break: break-word; color: #cbd5e1; }
+  .muted { color: #64748b; font-size: 13px; }
+  a { color: #7dd3fc; }
+</style>
+</head>
+<body>
+  <h1>📷 Kiểm tra camera 0.5×</h1>
+  <div class="sub">Bấm nút bên dưới, cho phép dùng camera. Trang sẽ báo máy này có vào được góc siêu rộng 0.5× hay không.</div>
+
+  <button id="go">▶ Bắt đầu kiểm tra</button>
+  <button id="copy">📋 Copy kết quả để gửi lại</button>
+
+  <div id="out"></div>
+
+  <div class="muted" style="margin-top:20px">
+    Lưu ý: trang này phải mở qua địa chỉ <b>https://</b> (GitHub Pages) mới bật được camera — mở file trực tiếp trên điện thoại sẽ không có camera.
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let report = "";
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+// Nhận diện ống kính siêu rộng qua nhãn (chỉ để tham khảo — không phải máy nào cũng ghi rõ)
+function looksUltraWide(label){
+  return /ultra.?wide|ultrawide|siêu r|góc rộng|wide.?angle|0\.5/i.test(label || "");
+}
+function facing(label, caps){
+  const f = (caps && caps.facingMode && caps.facingMode[0]) || "";
+  if (f === "environment") return "back";
+  if (f === "user") return "front";
+  if (/front|trước|facing front|user/i.test(label)) return "front";
+  if (/back|sau|rear|facing back|environment/i.test(label)) return "back";
+  return "?";
+}
+
+async function run(){
+  const out = $('out'); out.innerHTML = "<div class='muted'>Đang đọc camera…</div>";
+  report = "";
+  let lines = [];
+  const ua = navigator.userAgent;
+  lines.push("UserAgent: " + ua);
+
+  // 1) Xin quyền camera trước để enumerateDevices trả về nhãn đầy đủ
+  let primeStream = null;
+  try {
+    primeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  } catch(e){
+    try { primeStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); }
+    catch(e2){
+      out.innerHTML = "<div class='verdict no'>❌ Không mở được camera. Hãy cho phép quyền camera rồi thử lại.<br><span class='muted'>"+esc(e2.name+": "+e2.message)+"</span></div>";
+      return;
+    }
+  }
+  if (primeStream) primeStream.getTracks().forEach(t=>t.stop());
+
+  // 2) Liệt kê thiết bị
+  let devices = [];
+  try { devices = await navigator.mediaDevices.enumerateDevices(); } catch(e){}
+  const vids = devices.filter(d => d.kind === 'videoinput');
+  lines.push("Số camera thấy được: " + vids.length);
+
+  // 3) Mở lần lượt từng camera, đọc khả năng zoom
+  const results = [];
+  for (const d of vids){
+    let info = { label: d.label || "(không tên)", zoomMin: null, zoomMax: null, zoomStep: null, facing: "?", err: null };
+    let st = null;
+    try {
+      st = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: d.deviceId } }, audio: false });
+      const track = st.getVideoTracks()[0];
+      const caps = (track.getCapabilities && track.getCapabilities()) || {};
+      info.facing = facing(d.label, caps);
+      if (caps.zoom){
+        info.zoomMin = caps.zoom.min; info.zoomMax = caps.zoom.max; info.zoomStep = caps.zoom.step;
+      }
+    } catch(e){ info.err = e.name + ": " + e.message; }
+    finally { if (st) st.getTracks().forEach(t=>t.stop()); }
+    results.push(info);
+    await new Promise(r=>setTimeout(r,150)); // nghỉ nhẹ giữa các camera (nhất là iPhone)
+  }
+
+  // 4) Tính kết luận
+  let minZoomSeen = Infinity;
+  let anySubOne = false, backCount = 0, uwByLabel = false;
+  results.forEach(r=>{
+    if (r.facing === "back") backCount++;
+    if (r.zoomMin != null){ minZoomSeen = Math.min(minZoomSeen, r.zoomMin); if (r.zoomMin < 0.99) anySubOne = true; }
+    if (r.facing !== "front" && looksUltraWide(r.label)) uwByLabel = true;
+  });
+
+  let vClass, vText;
+  if (anySubOne){
+    vClass = "ok";
+    vText = "✅ Máy này VÀO ĐƯỢC 0.5×.<br>Trong app, mở camera rồi bấm nút <b>−</b> để giảm zoom xuống 0.5× (nhỏ nhất máy cho là " + minZoomSeen + "×).";
+  } else if (backCount >= 2 || uwByLabel){
+    vClass = "mid";
+    vText = "🟡 Máy có nhiều ống kính sau, nhưng trình duyệt KHÔNG cho zoom xuống dưới 1×.<br>Muốn dùng 0.5× thì app phải nâng cấp kiểu <b>chuyển hẳn sang ống kính siêu rộng</b> (và vẫn có thể không chắc chắn tùy máy).";
+  } else {
+    vClass = "no";
+    vText = "❌ Trình duyệt máy này chỉ mở được 1 ống kính sau, không có 0.5× cho web.<br>Đây là giới hạn của máy/trình duyệt, không sửa được từ app.";
+  }
+
+  // 5) Vẽ ra màn hình
+  let html = "<div class='verdict "+vClass+"'>"+vText+"</div>";
+  results.forEach((r,i)=>{
+    const ftag = r.facing === "back" ? "<span class='tag back'>ống sau</span>"
+              : r.facing === "front" ? "<span class='tag front'>ống trước</span>" : "";
+    const uw = (r.facing!=="front" && looksUltraWide(r.label)) ? "<span class='tag uw'>có thể là siêu rộng</span>" : "";
+    let zline;
+    if (r.err){ zline = "<div class='muted'>Không đọc được: "+esc(r.err)+"</div>"; }
+    else if (r.zoomMin == null){ zline = "<div class='z narrow'>Không có điều khiển zoom</div><div class='muted'>→ không xuống được 0.5×</div>"; }
+    else {
+      const cls = r.zoomMin < 0.99 ? "wide" : "narrow";
+      const note = r.zoomMin < 0.99 ? " ✅ có 0.5×" : " (không xuống dưới 1×)";
+      zline = "<div class='z "+cls+"'>Zoom: "+r.zoomMin+"× → "+r.zoomMax+"×"+note+"</div>";
+    }
+    html += "<div class='cam'><b>Camera "+(i+1)+"</b> "+ftag+uw+"<br>"+esc(r.label)+zline+"</div>";
+    lines.push("Cam"+(i+1)+" ["+r.facing+"] \""+r.label+"\" zoom="+(r.zoomMin!=null? (r.zoomMin+"-"+r.zoomMax+" step "+r.zoomStep) : (r.err?("ERR "+r.err):"none")));
+  });
+  out.innerHTML = html;
+
+  lines.unshift("KẾT LUẬN: " + vClass.toUpperCase() + " | min zoom = " + (isFinite(minZoomSeen)?minZoomSeen:"n/a") + " | camera sau = " + backCount);
+  report = lines.join("\n");
+  $('copy').style.display = "block";
+}
+
+$('go').onclick = () => { $('go').disabled = true; $('go').textContent = "Đang kiểm tra…";
+  run().finally(()=>{ $('go').disabled=false; $('go').textContent="🔄 Kiểm tra lại"; }); };
+
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(report); $('copy').textContent = "✔ Đã copy — dán vào Zalo gửi lại"; }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=report; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); $('copy').textContent="✔ Đã copy"; }catch(_){ alert(report); }
+    ta.remove();
+  }
+};
+</script>
+</body>
+</html>

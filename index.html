@@ -74,6 +74,13 @@
              background: rgba(0,0,0,.55); color: #fff; font-size: 26px; font-weight: 700; cursor: pointer; }
   #zoomLbl { color: #fff; font-size: 13px; font-weight: 700; background: rgba(0,0,0,.55);
              border-radius: 10px; padding: 3px 8px; }
+  /* V45: nút chuyển ống kính 0.5× / 1× (chỉ hiện khi máy có ống siêu rộng) */
+  #lensCtl { position: absolute; left: 50%; transform: translateX(-50%);
+             bottom: calc(120px + env(safe-area-inset-bottom, 12px)); z-index: 2;
+             display: none; gap: 8px; background: rgba(0,0,0,.4); padding: 5px; border-radius: 22px; }
+  #lensCtl button { min-width: 54px; height: 40px; border-radius: 20px; border: none;
+             background: rgba(255,255,255,.18); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+  #lensCtl button.on { background: #fff; color: #111; }
 
   /* Modal chọn thư mục */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 9998;
@@ -225,6 +232,10 @@
     <button onclick="zoomBy(1)" title="Phóng to">＋</button>
     <div id="zoomLbl">1.0×</div>
     <button onclick="zoomBy(-1)" title="Thu nhỏ">－</button>
+  </div>
+  <div id="lensCtl">
+    <button id="lensUW" onclick="switchLens(true)" title="Góc siêu rộng">0.5×</button>
+    <button id="lens1x" onclick="switchLens(false)" title="Ống thường">1×</button>
   </div>
   <div id="camBar">
     <span id="camCount">0 ảnh</span>
@@ -602,13 +613,60 @@ function captureDeg(frameLandscape) {
 async function openCamera() {
   if (!$('project').value) { alert('Hãy chọn/thêm dự án trước.'); return; }
   ensureMotion();           // V40: xin quyền cảm biến (chỉ lần đầu)
+  _curUW = false;           // V45: mỗi lần mở bắt đầu ở ống thường (1×)
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } }, audio: false });
+    camStream = await getCam();
     $('camVideo').srcObject = camStream;
     $('camOverlay').classList.add('show');
     setupZoom();              // V37
     updateCamCount();
+    discoverLenses();         // V45: dò ống kính siêu rộng (không chặn UI)
   } catch (e) { $('fileInput').click(); }
+}
+
+// ===== V45: ỐNG KÍNH SIÊU RỘNG 0.5× — CHUYỂN HẲN ỐNG KÍNH (khác với zoom V37) =====
+// Nhiều máy báo zoom nhỏ nhất = 1.0× nên nút − không xuống 0.5× được; 0.5× là ống kính
+// vật lý riêng → phải chọn đúng deviceId của ống siêu rộng. Máy không lộ ống này → tự ẩn nút.
+let _uwId = null, _mainId = null, _backCount = 0, _curUW = false, _lensReady = false;
+async function getCam() {
+  let v = { facingMode: 'environment', width: { ideal: 1920 } };
+  if (_curUW && _uwId) v = { deviceId: { exact: _uwId }, width: { ideal: 1920 } };
+  return navigator.mediaDevices.getUserMedia({ video: v, audio: false });
+}
+async function discoverLenses() {
+  if (_lensReady) { updateLensUI(); return; }
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const back = devs.filter(d => d.kind === 'videoinput' && !/front|trước|facing front|selfie|user/i.test(d.label || ''));
+    _backCount = back.length;
+    const uw = back.find(d => /ultra.?wide|ultrawide|siêu r|góc rộng|0\.5/i.test(d.label || ''));
+    const main = back.find(d => d !== uw && /back|sau|rear|facing back|environment|wide/i.test(d.label || '')) || back.find(d => d !== uw) || null;
+    _uwId = uw ? uw.deviceId : null;
+    _mainId = main ? main.deviceId : null;
+  } catch (e) {}
+  _lensReady = true;
+  updateLensUI();
+}
+async function switchLens(uw) {
+  if (uw === _curUW) return;
+  const prev = camStream;
+  try {
+    const v = uw ? { deviceId: { exact: _uwId }, width: { ideal: 1920 } } : { facingMode: 'environment', width: { ideal: 1920 } };
+    const s = await navigator.mediaDevices.getUserMedia({ video: v, audio: false });
+    if (prev) prev.getTracks().forEach(t => t.stop());
+    camStream = s; $('camVideo').srcObject = s; _curUW = uw;
+    setupZoom(); updateLensUI();
+  } catch (e) { alert('Máy không chuyển được sang ống kính này.'); }
+}
+function updateLensUI() {
+  const el = $('lensCtl'); if (!el) return;
+  const show = !!_uwId && _backCount >= 2;      // có ống siêu rộng RIÊNG mới hiện
+  el.style.display = show ? 'flex' : 'none';
+  if (show) {
+    const a = $('lensUW'), b = $('lens1x');
+    if (a) a.classList.toggle('on', _curUW);
+    if (b) b.classList.toggle('on', !_curUW);
+  }
 }
 
 // ===== V37: ZOOM (dùng zoom phần cứng nếu máy hỗ trợ, không thì zoom số) =====
